@@ -36,18 +36,18 @@ export const Header: React.FC<HeaderProps> = ({
   const hasCriticalSeizureRisk = metrics.alertasJudicialesPendientes > 0;
 
   return (
-    <header className="border-b border-slate-800 bg-slate-950/90 backdrop-blur sticky top-0 z-40">
+    <header className="border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-xl sticky top-0 z-40">
       {/* Top Critical Risk Warning Banner if active unhandled seizure threat exists */}
       {hasCriticalSeizureRisk && (
         <div className="bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 text-white px-4 py-2 shadow-md">
-          <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2 text-sm font-medium">
-            <div className="flex items-center gap-2">
+          <div className="max-w-7xl mx-auto flex flex-wrap items-start sm:items-center justify-between gap-2 text-sm font-medium">
+            <div className="flex min-w-0 items-start gap-2">
               <span className="flex h-3 w-3 relative">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
               </span>
               <AlertTriangle className="w-4 h-4 shrink-0" />
-              <span>
+              <span className="leading-5">
                 <strong>ALERTA CRÍTICA COBGESTION:</strong> Existe comprobante informado pendiente en causa con{' '}
                 <strong>Orden de Incautación Vigente</strong> (Vehículo). Requiere acción judicial inmediata para evitar
                 pérdida de <strong>$600.000 CLP</strong> en costas judiciales.
@@ -64,31 +64,31 @@ export const Header: React.FC<HeaderProps> = ({
       )}
 
       {/* Main Header Row */}
-      <div className="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3 flex flex-wrap items-center justify-between gap-3 sm:gap-4">
         {/* Brand */}
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 text-white font-black text-xl">
             C
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xl font-bold tracking-tight text-white">Cobgestion</span>
-              <span className="text-xs bg-indigo-500/20 text-indigo-300 font-semibold px-2 py-0.5 rounded border border-indigo-500/30">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="text-lg sm:text-xl font-bold tracking-tight text-white">Cobgestion</span>
+              <span className="hidden sm:inline text-xs bg-indigo-500/20 text-indigo-300 font-semibold px-2 py-0.5 rounded border border-indigo-500/30">
                 LegalTech
               </span>
               <span className="text-xs bg-emerald-500/20 text-emerald-300 font-medium px-2 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Motor Python v3.10
               </span>
             </div>
-            <p className="text-xs text-slate-400">
+            <p className="hidden sm:block text-xs text-slate-400">
               Sistema Integrado de Detección de Eventos Críticos & Coordinación Judicial-Comercial
             </p>
           </div>
         </div>
 
         {/* Live Counters */}
-        <div className="flex items-center gap-3 text-xs">
-          <div className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 flex items-center gap-2">
+        <div className="flex w-full lg:w-auto flex-wrap items-center justify-end gap-2 text-xs">
+          <div className="min-w-[145px] flex-1 sm:flex-none bg-slate-900/80 border border-slate-800 rounded-lg px-3 py-1.5 flex items-center gap-2">
             <Car className="w-4 h-4 text-amber-400" />
             <div>
               <p className="text-slate-400 text-[10px] uppercase font-bold">Pérdidas Prevenidas</p>
@@ -98,7 +98,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 flex items-center gap-2">
+          <div className="min-w-[145px] flex-1 sm:flex-none bg-slate-900/80 border border-slate-800 rounded-lg px-3 py-1.5 flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-rose-400" />
             <div>
               <p className="text-slate-400 text-[10px] uppercase font-bold">Eventos Críticos</p>
@@ -111,7 +111,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Action buttons */}
           <button
             onClick={onOpenNewNoticeModal}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-3.5 py-2 rounded-lg text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/30 transition cursor-pointer"
+            className="flex-1 sm:flex-none justify-center bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-3.5 py-2 rounded-lg text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/30 transition cursor-pointer"
           >
             <Sparkles className="w-4 h-4" />
             Ingresar Comprobante (IA)
@@ -128,7 +128,7 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Navigation Tabs */}
-      <div className="max-w-7xl mx-auto px-4 flex gap-1 overflow-x-auto text-sm border-t border-slate-800/80 pt-1">
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 flex gap-1 overflow-x-auto text-sm border-t border-slate-800/80 pt-1 pb-1">
         <button
           onClick={() => setActiveTab('eventos')}
           className={`flex items-center gap-2 px-3.5 py-2 border-b-2 font-medium text-xs md:text-sm whitespace-nowrap transition cursor-pointer ${

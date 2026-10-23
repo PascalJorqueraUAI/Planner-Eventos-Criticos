@@ -255,7 +255,7 @@ export default function App() {
   const selectedCaso = casos.find((c) => c.id === selectedCaseIdForModal) || null;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+    <div className="min-h-screen text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
       {/* Top Header */}
       <Header
         activeTab={activeTab}
@@ -266,7 +266,7 @@ export default function App() {
       />
 
       {/* Main Content Body */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 py-4 sm:px-4 md:p-6">
         {loading ? (
           <div className="py-24 text-center text-slate-400 text-sm">
             <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
@@ -349,7 +349,7 @@ export default function App() {
       />
 
       {/* Footer */}
-      <footer className="border-t border-slate-800 bg-slate-950 py-4 px-6 text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <footer className="border-t border-slate-800/80 bg-slate-950/60 py-4 px-3 sm:px-6 text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-2 text-center sm:text-left">
         <p>
           &copy; {new Date().getFullYear()} Cobgestion LegalTech SpA &bull; Sistema Integrado de Eventos Críticos &
           Gestión Paralela

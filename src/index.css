@@ -1,1 +1,53 @@
 @import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Segoe UI", sans-serif;
+}
+
+:root {
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+html {
+  background: #080d1b;
+  scroll-behavior: smooth;
+}
+
+body {
+  min-width: 320px;
+  margin: 0;
+  background:
+    radial-gradient(circle at 12% -10%, rgb(49 46 129 / 0.22), transparent 32rem),
+    radial-gradient(circle at 92% 8%, rgb(8 145 178 / 0.12), transparent 28rem),
+    #080d1b;
+  color: #e2e8f0;
+  font-family: var(--font-sans);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #818cf8;
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgb(99 102 241 / 0.35);
+  color: #fff;
+}
+
+* {
+  scrollbar-color: #334155 transparent;
+  scrollbar-width: thin;
+}

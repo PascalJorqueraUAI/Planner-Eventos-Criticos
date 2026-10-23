@@ -134,14 +134,7 @@ export const CriticalEventsView: React.FC<CriticalEventsViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 self-start md:self-auto">
-            <button
-              onClick={onOpenNoticeModal}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-4 py-2 rounded-xl text-xs flex items-center gap-2 shadow-md shadow-indigo-600/30 transition cursor-pointer"
-            >
-              + Simular Ingreso de Comprobante
-            </button>
-          </div>
+          
         </div>
 
         {/* Filter bar */}
