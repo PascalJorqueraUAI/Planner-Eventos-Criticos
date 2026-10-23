@@ -12,10 +12,13 @@ const app = express();
 const PORT = 3000;
 app.use(express.json({ limit: '25mb' }));
 
+const pythonCommand = process.platform === 'win32' ? 'py' : 'python3';
+const pythonArgs = process.platform === 'win32' ? ['-3'] : [];
+
 // Helper to execute Python CLI engine
 function runPythonCli(command: string, args: Record<string, any> = {}): Promise<any> {
   return new Promise((resolve, reject) => {
-    const cliArgs = ['python_engine/cli.py', command];
+    const cliArgs = [...pythonArgs, 'python_engine/cli.py', command];
 
     if (args.jsonInput) {
       cliArgs.push('--json-input', JSON.stringify(args.jsonInput));
@@ -39,7 +42,7 @@ function runPythonCli(command: string, args: Record<string, any> = {}): Promise<
       cliArgs.push('--notas', args.notas);
     }
 
-    const pyProcess = spawn('python3', cliArgs, {
+    const pyProcess = spawn(pythonCommand, cliArgs, {
       cwd: process.cwd(),
       env: process.env,
     });
@@ -112,7 +115,7 @@ app.get('/api/python/status', async (_req, res) => {
 
 // Run Python Unit Tests
 app.get('/api/python/run-tests', async (_req, res) => {
-  const pyProcess = spawn('python3', ['python_engine/test_cobgestion.py'], {
+  const pyProcess = spawn(pythonCommand, [...pythonArgs, 'python_engine/test_cobgestion.py'], {
     cwd: process.cwd(),
   });
   let output = '';

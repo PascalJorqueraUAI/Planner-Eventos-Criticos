@@ -74,29 +74,33 @@ http://localhost:3000
 El núcleo de reglas de negocio está implementado en Python y puede ser ejecutado directamente desde la terminal o integrado en pipelines automatizados:
 
 ### Consultar el Estado del Repositorio y Ahorros
-```bash
-python3 python_engine/cli.py status
+```powershell
+py -3 python_engine/cli.py status
 ```
+En macOS/Linux usa `python3 python_engine/cli.py status`.
 *Salida en JSON con total de casos, eventos activos, alertas judiciales pendientes y CLP ahorrado en costas prevenidas.*
 
 ### Ejecutar la Suite de Pruebas Unitarias de Python
-```bash
-python3 python_engine/test_cobgestion.py
+```powershell
+py -3 python_engine/test_cobgestion.py
 # O mediante npm:
 npm run test:py
 ```
+En macOS/Linux sustituye `py -3` por `python3`.
 *Ejecuta 5 pruebas formales con `unittest` que validan la detección inmediata, la regla de bloqueo de cierre prematuro, el riesgo de 600.000 CLP y la conciliación batch.*
 
 ### Exportar las 6 Hojas del Repositorio a Excel / CSV
-```bash
-python3 python_engine/cli.py export-excel
+```powershell
+py -3 python_engine/cli.py export-excel
 ```
+En macOS/Linux usa `python3 python_engine/cli.py export-excel`.
 *Genera los archivos compatibles con Excel en `./exports/`: `Cobgestion_Casos.csv`, `Cobgestion_Avisos_Pago.csv`, `Cobgestion_Eventos_Criticos.csv`, `Cobgestion_Tareas.csv`, `Cobgestion_Pagos_Conciliados.csv` e `Cobgestion_Historial.csv`.*
 
 ### Restablecer Caso Demostrativo
-```bash
-python3 python_engine/cli.py reset-data
+```powershell
+py -3 python_engine/cli.py reset-data
 ```
+En macOS/Linux usa `python3 python_engine/cli.py reset-data`.
 
 ---
 
