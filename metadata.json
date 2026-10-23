@@ -1,0 +1,6 @@
+{
+  "name": "Cobgestion LegalTech - Sistema Integrado de Eventos Críticos",
+  "description": "Plataforma LegalTech para cobranza judicial y extrajudicial con detección automática de eventos críticos, gestión paralela de tareas comercial-judicial y procesamiento inteligente de comprobantes de pago no estructurados.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
