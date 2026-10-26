@@ -12,6 +12,7 @@ from controlador.extraccion import (
     extraer_local,
     llamar_gemini,
     reidentificar,
+    sanear,
     seudonimizar,
 )
 from tests.utilidades import AHORA, servicio_de_prueba
@@ -141,6 +142,37 @@ class TestUsoDeGemini(unittest.TestCase):
         self.assertEqual(datos["rut_depositante"], "16.482.910-K")
 
 
+class TestSaneamientoDeLaRespuesta(unittest.TestCase):
+    """Casos vistos en respuestas reales de Gemini."""
+
+    def test_rut_con_razonamiento_filtrado_conserva_solo_el_rut(self):
+        datos = sanear({"rut_depositante": "11.111.111-1 Barbora/Prueba11111111-1? no, 11.111.111-1. Wait, let's"})
+        self.assertEqual(datos["rut_depositante"], "11.111.111-1")
+
+    def test_valores_de_relleno_quedan_vacios(self):
+        for relleno in ("NO_DETECTADO", "N/A", "null", "  no detectado. "):
+            self.assertIsNone(sanear({"numero_operacion": relleno})["numero_operacion"], relleno)
+
+    def test_numero_de_operacion_debe_parecer_un_codigo(self):
+        self.assertEqual(sanear({"numero_operacion": "Comprobante SER-8812903"})["numero_operacion"], "SER-8812903")
+        self.assertIsNone(sanear({"numero_operacion": "transferencia"})["numero_operacion"])
+
+    def test_nombre_con_texto_extrano_se_descarta(self):
+        self.assertIsNone(sanear({"nombre_depositante": "Persona De Prueba [sic] / 11.111.111-1?"})["nombre_depositante"])
+        self.assertEqual(sanear({"nombre_depositante": "Persona De Prueba"})["nombre_depositante"], "Persona De Prueba")
+
+    def test_monto_y_confianza_invalidos(self):
+        datos = sanear({"monto": "abc", "confianza": 7})
+        self.assertEqual(datos["monto"], 0)
+        self.assertIsNone(datos["confianza"])
+
+    def test_la_extraccion_completa_aplica_el_saneamiento(self):
+        espia = Espia({"monto": 1000, "numero_operacion": "NO_DETECTADO", "rut_depositante": "[RUT_1] (creo)"})
+        datos, _ = extraer("Pagué mil pesos, mi RUT es 16.482.910-K", llamar=espia)
+        self.assertIsNone(datos["numero_operacion"])
+        self.assertEqual(datos["rut_depositante"], "16.482.910-K")
+
+
 class TestClienteGemini(unittest.TestCase):
     """La red se simula: estas pruebas nunca llaman a Google."""
 
@@ -157,6 +189,74 @@ class TestClienteGemini(unittest.TestCase):
         self.assertEqual(solicitud.get_header("X-goog-api-key"), "clave-de-prueba")
         cuerpo = json.loads(solicitud.data)
         self.assertEqual(cuerpo["generationConfig"]["responseMimeType"], "application/json")
+
+    @staticmethod
+    def respuesta_ok(datos=None):
+        cuerpo = {"candidates": [{"content": {"parts": [{"text": json.dumps(datos or {"monto": 1})}]}}]}
+        return io.BytesIO(json.dumps(cuerpo).encode())
+
+    @staticmethod
+    def error_http(codigo, cuerpo=b"{}"):
+        return urllib.error.HTTPError("https://x", codigo, "error", {}, io.BytesIO(cuerpo))
+
+    def test_pide_razonamiento_minimo(self):
+        with mock.patch("urllib.request.urlopen", return_value=self.respuesta_ok()) as abrir:
+            llamar_gemini(ACTIVA, [{"text": "x"}])
+        cuerpo = json.loads(abrir.call_args.args[0].data)
+        self.assertEqual(cuerpo["generationConfig"]["thinkingConfig"], {"thinkingLevel": "minimal"})
+
+    def test_reintenta_ante_alta_demanda_y_luego_responde(self):
+        esperas = []
+        efectos = [self.error_http(503), TimeoutError("lento"), self.respuesta_ok({"monto": 7})]
+        with mock.patch("urllib.request.urlopen", side_effect=efectos) as abrir:
+            datos = llamar_gemini(ACTIVA, [{"text": "x"}], dormir=esperas.append)
+        self.assertEqual(datos, {"monto": 7})
+        self.assertEqual(abrir.call_count, 3)
+        self.assertEqual(esperas, [2.0, 4.0])
+
+    def test_se_rinde_tras_los_intentos_permitidos(self):
+        with mock.patch("urllib.request.urlopen", side_effect=[self.error_http(503) for _ in range(3)]):
+            with self.assertRaisesRegex(RuntimeError, "503 tras 3 intento"):
+                llamar_gemini(ACTIVA, [{"text": "x"}], dormir=lambda _: None)
+
+    def test_no_reintenta_errores_definitivos(self):
+        with mock.patch("urllib.request.urlopen", side_effect=[self.error_http(401)]) as abrir:
+            with self.assertRaises(RuntimeError):
+                llamar_gemini(ACTIVA, [{"text": "x"}], dormir=lambda _: None)
+        self.assertEqual(abrir.call_count, 1)
+
+    def test_respeta_el_plazo_total(self):
+        instantes = iter([0, 60, 60])   # el primer intento ya consumió 60 s: no cabe otro de 45 s
+        with mock.patch("urllib.request.urlopen", side_effect=[TimeoutError("lento"), self.respuesta_ok()]) as abrir:
+            with self.assertRaisesRegex(RuntimeError, "tras 1 intento"):
+                llamar_gemini(ACTIVA, [{"text": "x"}], dormir=lambda _: None, reloj=lambda: next(instantes))
+        self.assertEqual(abrir.call_count, 1)
+
+    def test_cuota_diaria_agotada_no_reintenta_y_explica_cuando_se_renueva(self):
+        """Respuesta real de Google al agotar las 20 solicitudes diarias del plan gratuito."""
+        cuerpo = json.dumps({"error": {"code": 429, "details": [
+            {"@type": "type.googleapis.com/google.rpc.QuotaFailure",
+             "violations": [{"quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_requests"}]},
+            {"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "49213s"},
+        ]}}).encode()
+        with mock.patch("urllib.request.urlopen", side_effect=[self.error_http(429, cuerpo)]) as abrir:
+            with self.assertRaisesRegex(RuntimeError, "cuota diaria del plan gratuito .* se renueva en 13 h 40 min"):
+                llamar_gemini(ACTIVA, [{"text": "x"}], dormir=lambda _: None)
+        self.assertEqual(abrir.call_count, 1)
+
+    def test_limite_por_minuto_espera_lo_que_indica_google(self):
+        cuerpo = b'{"error": {"details": [{"@type": "x.RetryInfo", "retryDelay": "7s"}]}}'
+        esperas = []
+        with mock.patch("urllib.request.urlopen", side_effect=[self.error_http(429, cuerpo), self.respuesta_ok()]):
+            llamar_gemini(ACTIVA, [{"text": "x"}], dormir=esperas.append)
+        self.assertEqual(esperas, [7.0])
+
+    def test_modelo_sin_ese_nivel_de_razonamiento_se_reintenta_sin_el(self):
+        rechazo = self.error_http(400, b'{"error": {"message": "thinking_level minimal is not supported"}}')
+        with mock.patch("urllib.request.urlopen", side_effect=[rechazo, self.respuesta_ok()]) as abrir:
+            llamar_gemini(ACTIVA, [{"text": "x"}], dormir=lambda _: None)
+        segundo = json.loads(abrir.call_args_list[1].args[0].data)
+        self.assertNotIn("thinkingConfig", segundo["generationConfig"])
 
     def test_error_http_no_arrastra_el_contenido(self):
         error = urllib.error.HTTPError("https://x", 403, "Forbidden", {}, io.BytesIO(b"{}"))

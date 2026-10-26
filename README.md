@@ -174,8 +174,16 @@ cp .env.example .env      # en PowerShell: Copy-Item .env.example .env
 El sistema funciona **sin clave de Gemini**: la extracción de comprobantes queda solo local y los datos se completan a mano. Para usar Gemini:
 
 1. Cada integrante crea **su propia** clave en [Google AI Studio](https://aistudio.google.com/apikey) y la pega en `GEMINI_API_KEY`. **Nunca subas el `.env` ni compartas la clave por el chat del grupo**: el `.gitignore` ya lo excluye.
-2. Guarda el archivo y comprueba que la clave y el modelo funcionan: `npm run test:gemini`.
-3. Para que la interfaz use Gemini, cambia `GEMINI_TRATAMIENTO_AUTORIZADO="si"`. Hazlo **solo con datos de prueba**. Con datos reales de deudores, antes hay que cumplir los requisitos de la sección [Extracción de comprobantes y protección de datos personales](#extracción-de-comprobantes-y-protección-de-datos-personales).
+2. Pon `GEMINI_TRATAMIENTO_AUTORIZADO="si"` para que la interfaz use Gemini.
+3. **Guarda el archivo y reinicia `npm run dev`** (Ctrl+C y de nuevo). El servidor lee el `.env` solo al arrancar.
+4. Comprueba que funciona con `npm run test:gemini`.
+5. En la interfaz, *Registrar comprobante* debe mostrar "Gemini habilitado" con el modelo en uso.
+
+Configuración verificada con llamadas reales (26-10-2026): `GEMINI_MODEL="gemini-3.6-flash"` y `GEMINI_THINKING_LEVEL="minimal"`. Con imágenes de comprobantes respondió entre 5 y 30 s según la demanda. Si Google devuelve 503 o se demora, el sistema reintenta solo hasta por unos 100 s.
+
+> ⚠️ **Plan gratuito: solo datos ficticios.** Una clave nueva de AI Studio queda en el plan gratuito, salvo que el proyecto tenga facturación activa. En ese plan:
+> - **Google puede usar lo que envías para entrenar sus modelos**, y personas pueden revisarlo. Úsalo solo con los datos inventados del sandbox. Con datos reales de deudores hay que cumplir los requisitos de la sección [Extracción de comprobantes y protección de datos personales](#extracción-de-comprobantes-y-protección-de-datos-personales).
+> - **El límite es de 20 extracciones al día por modelo** (sin contar las extracciones locales). `npm run test:gemini` gasta 2. **El día de la presentación no corran pruebas de más.** Si se agota, la interfaz lo avisa ("cuota diaria del plan gratuito agotada; se renueva en…") y sigue funcionando con la extracción local.
 
 ### 4. Levantar la aplicación
 
@@ -194,7 +202,8 @@ En Windows, ejecuta los comandos desde **PowerShell** o la terminal de VS Code, 
 3. **Asignación:** en "¿Por qué esta persona?" se ve que Camila, titular del caso, quedó excluida por su permiso en el calendario. Programa una ausencia a otro colaborador y mira cómo se reasignan sus tareas.
 4. **Cierre coordinado:** marca como atendida la tarea comercial ("Pago confirmado"). El evento sigue abierto hasta que Judicial atienda la suya.
 5. **Repositorio → Registrar comprobante:** registra el correo del camión KR-WP-19. El detector crea el evento en el acto.
-6. **Trazabilidad:** métricas, carga por colaborador, auditoría y registro de tratamientos de datos.
+6. **Gemini (si está habilitado):** en *Registrar comprobante → Imagen*, sube `python_engine/tests/fixtures/comprobante_ficticio.png`, confirma el envío y presiona *Extraer datos*. Se prellenan monto, RUT y N° de operación. Con el ejemplo "WhatsApp sin N° de operación", despliega "Ver exactamente qué texto salió hacia Gemini" para mostrar la seudonimización (`[RUT_1]`, `[CORREO_1]`…).
+7. **Trazabilidad:** métricas, carga por colaborador, auditoría y el registro de tratamientos, donde queda cada envío a Gemini.
 
 ### 6. Pruebas
 
@@ -202,7 +211,7 @@ En Windows, ejecuta los comandos desde **PowerShell** o la terminal de VS Code, 
 |---|---|---|
 | `npm test` | Pruebas unitarias del motor Python (detector, asignación, seguimiento, extracción, privacidad) | No |
 | `npm run lint` | Chequeo de tipos de la Vista y la API | No |
-| `npm run test:gemini` | Integración **real** con Gemini usando solo datos ficticios (texto y `tests/fixtures/comprobante_ficticio.png`). Se omite si no hay clave. | Sí, consume cuota |
+| `npm run test:gemini` | Integración **real** con Gemini usando solo datos ficticios (texto y `tests/fixtures/comprobante_ficticio.png`). Se omite si no hay clave o si la cuota está agotada. | Sí, gasta 2 de las 20 solicitudes diarias |
 
 ### 7. Uso del motor sin la interfaz
 
@@ -220,9 +229,11 @@ py -3 python_engine/cli.py reiniciar
 | `spawn py ENOENT` o "no se encontró py" | En Windows, Git Bash no ve el lanzador `py`. Usa PowerShell. Si tampoco funciona ahí, instala Python desde python.org marcando "py launcher". |
 | `EADDRINUSE ... 3000` | Ya hay otra instancia corriendo. Ciérrala (Ctrl+C en su terminal) o cambia `PORT` en el `.env`. |
 | La interfaz falla tras actualizar el código | El `data_store.json` quedó con un formato anterior. Presiona **Reiniciar sandbox** o borra `python_engine/data_store.json`. |
-| `npm run test:gemini` dice "skipped" | No hay clave en el `.env`, o el archivo no se guardó. |
-| `npm run test:gemini` falla con HTTP 404 en el modelo | El modelo de `GEMINI_MODEL` no está disponible para tu clave: revisa los nombres vigentes en la [documentación de modelos](https://ai.google.dev/gemini-api/docs/models). |
-| Gemini responde 429 | Se acabó la cuota del plan. Espera o revisa la facturación del proyecto. |
+| La interfaz dice "falta GEMINI_TRATAMIENTO_AUTORIZADO=si" aunque ya lo pusiste | El servidor se inició antes del cambio. Reinicia `npm run dev`. |
+| `npm run test:gemini` dice "skipped" | Sin clave: no hay clave en el `.env` o no se guardó. Con el motivo "cuota … agotada": se acabaron las 20 solicitudes diarias del plan gratuito (ver el punto siguiente). |
+| "cuota diaria del plan gratuito de Gemini agotada" | Espera el tiempo indicado, usa la clave de otro integrante o cambia a otro modelo, que tiene cuota propia (por ejemplo `GEMINI_MODEL="gemini-3.5-flash-lite"`). Mientras tanto, el registro sigue funcionando con la extracción local. |
+| La extracción tarda o dice "503" | Alta demanda en Google. El sistema reintenta solo y, si no lo logra, usa la extracción local. Completa a mano lo que falte. |
+| `npm run test:gemini` falla con HTTP 404 en el modelo | El modelo de `GEMINI_MODEL` no está disponible para tu clave: revisa los nombres vigentes en la [documentación de modelos](https://ai.google.dev/gemini-api/docs/models). Si el modelo no admite `GEMINI_THINKING_LEVEL="minimal"`, el sistema reintenta sin ese parámetro. |
 
 ## Estados de pago
 

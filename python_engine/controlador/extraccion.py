@@ -25,6 +25,7 @@ import hashlib
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -34,7 +35,13 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from modelo.entidades import RegistroTratamiento, a_iso
 
 MODELO_POR_DEFECTO = "gemini-3.6-flash"
-TIEMPO_MAXIMO_S = 20
+# Leer un comprobante no requiere razonamiento: "minimal" baja costo y latencia.
+NIVEL_RAZONAMIENTO_POR_DEFECTO = "minimal"
+# Con alta demanda Gemini puede tardar 15-30 s o responder 503: se reintenta dentro de un plazo total.
+TIEMPO_MAXIMO_S = 45
+PLAZO_TOTAL_S = 100
+INTENTOS = 3
+CODIGOS_TRANSITORIOS = {429, 500, 502, 503, 504}
 FINALIDAD = "Verificación de pagos informados en cobranza judicial y extrajudicial"
 
 CAMPOS = (
@@ -59,6 +66,7 @@ class ConfigExtraccion:
     api_key: str
     modelo: str
     autorizado: bool
+    nivel_razonamiento: Optional[str] = NIVEL_RAZONAMIENTO_POR_DEFECTO
 
     @classmethod
     def desde_entorno(cls) -> "ConfigExtraccion":
@@ -67,6 +75,7 @@ class ConfigExtraccion:
             api_key="" if clave in ("", "MY_GEMINI_API_KEY") else clave,
             modelo=os.environ.get("GEMINI_MODEL") or MODELO_POR_DEFECTO,
             autorizado=os.environ.get("GEMINI_TRATAMIENTO_AUTORIZADO", "").strip().lower() in ("si", "sí", "true", "1"),
+            nivel_razonamiento=os.environ.get("GEMINI_THINKING_LEVEL", NIVEL_RAZONAMIENTO_POR_DEFECTO).strip() or None,
         )
 
     @property
@@ -153,6 +162,8 @@ banco_destino, numero_operacion, rut_depositante, nombre_depositante, fecha_hora
 comentario (glosa de la transferencia). No describas la imagen ni agregues otros datos personales.
 Los marcadores entre corchetes, como [RUT_1] o [NOMBRE_1], reemplazan datos personales:
 cópialos tal cual en el campo que corresponda y no intentes deducir el dato real.
+Cada campo contiene SOLO el valor, sin comentarios ni explicaciones. Si un dato no aparece,
+usa null (no escribas "N/A" ni "no detectado").
 Indica en confianza (0 a 1) qué tan seguro estás de la extracción.
 
 Texto recibido: {texto}"""
@@ -160,36 +171,128 @@ Texto recibido: {texto}"""
 ESQUEMA = {
     "type": "OBJECT",
     "properties": {
-        **{campo: {"type": "STRING"} for campo in CAMPOS if campo != "monto"},
+        **{campo: {"type": "STRING", "nullable": True} for campo in CAMPOS if campo != "monto"},
         "monto": {"type": "INTEGER"},
         "confianza": {"type": "NUMBER"},
     },
-    "required": ["monto", "numero_operacion"],
+    "required": ["monto"],
 }
+
+# --- Validación de lo que responde el tercero -------------------------------------------------
+
+VALORES_VACIOS = {"", "-", "n/a", "na", "null", "none", "ninguno", "ninguna", "no_detectado", "no detectado",
+                  "desconocido", "sin dato", "sin datos", "no aplica", "no informado"}
+LARGO_MAXIMO = {"nombre_depositante": 80, "comentario": 160}
+PATRON_CODIGO = re.compile(r"\b(?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{3,}\b")
+
+
+def _texto_limpio(valor: Any, largo: int = 120) -> Optional[str]:
+    if valor is None:
+        return None
+    texto = " ".join(str(valor).split())
+    if texto.lower().strip(" .") in VALORES_VACIOS:
+        return None
+    return texto[:largo]
+
+
+def sanear(datos: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    La respuesta de un modelo no es confiable por sí sola: puede traer valores de relleno o
+    texto de razonamiento dentro de un campo. Se conserva solo lo que tiene la forma esperada.
+    Se aplica después de re-identificar (para que [RUT_1] ya sea un RUT real).
+    """
+    limpio = {c: _texto_limpio(datos.get(c), LARGO_MAXIMO.get(c, 120)) for c in CAMPOS if c != "monto"}
+    rut = PATRON_RUT.search(limpio["rut_depositante"] or "")
+    limpio["rut_depositante"] = rut.group(0) if rut else None
+    codigo = PATRON_CODIGO.search((limpio["numero_operacion"] or "").upper())
+    limpio["numero_operacion"] = codigo.group(0) if codigo else None
+    nombre = limpio["nombre_depositante"]
+    if nombre and (re.search(r"[\d?{}\[\]]", nombre) or len(nombre.split()) > 8):
+        limpio["nombre_depositante"] = None
+    try:
+        limpio["monto"] = max(0, int(datos.get("monto") or 0))
+    except (TypeError, ValueError):
+        limpio["monto"] = 0
+    try:
+        confianza = float(datos.get("confianza"))
+        limpio["confianza"] = confianza if 0 <= confianza <= 1 else None
+    except (TypeError, ValueError):
+        limpio["confianza"] = None
+    return limpio
 
 LlamadaGemini = Callable[[ConfigExtraccion, List[Dict[str, Any]]], Dict[str, Any]]
 
 
-def llamar_gemini(config: ConfigExtraccion, partes: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _solicitar(config: ConfigExtraccion, partes: List[Dict[str, Any]], nivel: Optional[str]) -> Dict[str, Any]:
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.modelo}:generateContent"
-    cuerpo = {
-        "contents": [{"role": "user", "parts": partes}],
-        "generationConfig": {"responseMimeType": "application/json", "responseSchema": ESQUEMA},
-    }
+    generacion: Dict[str, Any] = {"responseMimeType": "application/json", "responseSchema": ESQUEMA}
+    if nivel:
+        generacion["thinkingConfig"] = {"thinkingLevel": nivel}
     solicitud = urllib.request.Request(
         url,
-        data=json.dumps(cuerpo).encode("utf-8"),
+        data=json.dumps({"contents": [{"role": "user", "parts": partes}], "generationConfig": generacion}).encode("utf-8"),
         headers={"Content-Type": "application/json", "x-goog-api-key": config.api_key},
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(solicitud, timeout=TIEMPO_MAXIMO_S) as respuesta:
-            datos = json.load(respuesta)
-    except urllib.error.HTTPError as error:
-        # El cuerpo de error de Google no contiene el comprobante; el de la solicitud no se registra nunca.
-        raise RuntimeError(f"Gemini respondió {error.code}") from None
-    texto = datos["candidates"][0]["content"]["parts"][0]["text"]
-    return json.loads(texto)
+    with urllib.request.urlopen(solicitud, timeout=TIEMPO_MAXIMO_S) as respuesta:
+        datos = json.load(respuesta)
+    return json.loads(datos["candidates"][0]["content"]["parts"][0]["text"])
+
+
+def llamar_gemini(
+    config: ConfigExtraccion,
+    partes: List[Dict[str, Any]],
+    dormir: Callable[[float], None] = time.sleep,
+    reloj: Callable[[], float] = time.monotonic,
+) -> Dict[str, Any]:
+    """
+    Llama a Gemini reintentando las fallas transitorias (alta demanda, cuota, tiempo agotado)
+    con esperas crecientes, sin pasar de PLAZO_TOTAL_S. Los mensajes de error nunca incluyen
+    el contenido enviado.
+    """
+    nivel = config.nivel_razonamiento
+    inicio = reloj()
+    ultimo_error = "sin respuesta"
+    intentos = 0
+    while intentos < INTENTOS:
+        intentos += 1
+        espera = 2.0 ** intentos
+        try:
+            return _solicitar(config, partes, nivel)
+        except urllib.error.HTTPError as error:
+            detalle = error.read().decode("utf-8", errors="ignore").lower()
+            if error.code == 400 and nivel and "thinking" in detalle:
+                nivel = None          # el modelo no admite ese nivel de razonamiento: se omite
+                intentos -= 1
+                continue
+            if error.code not in CODIGOS_TRANSITORIOS:
+                raise RuntimeError(f"Gemini respondió {error.code}") from None
+            ultimo_error = f"Gemini respondió {error.code}"
+            if error.code == 429:
+                retraso = _segundos_para_reintentar(detalle)
+                if retraso is not None and reloj() - inicio + retraso + TIEMPO_MAXIMO_S > PLAZO_TOTAL_S:
+                    # Cuota agotada por horas (típico del límite diario): reintentar no sirve.
+                    plan = "diaria del plan gratuito" if "free_tier" in detalle or "freetier" in detalle else "de la API"
+                    raise RuntimeError(f"cuota {plan} de Gemini agotada; se renueva en {_duracion(retraso)}") from None
+                espera = retraso if retraso is not None else espera
+        except (TimeoutError, urllib.error.URLError, ConnectionError):
+            ultimo_error = "tiempo de espera agotado o sin conexión"
+        if intentos >= INTENTOS or reloj() - inicio + espera + TIEMPO_MAXIMO_S > PLAZO_TOTAL_S:
+            break
+        dormir(espera)
+    raise RuntimeError(f"{ultimo_error} tras {intentos} intento(s)")
+
+
+def _segundos_para_reintentar(detalle: str) -> Optional[float]:
+    """Lee el retryDelay ("49213s") que Google incluye en las respuestas 429."""
+    coincidencia = re.search(r'"retrydelay"\s*:\s*"(\d+(?:\.\d+)?)s"', detalle)
+    return float(coincidencia.group(1)) if coincidencia else None
+
+
+def _duracion(segundos: float) -> str:
+    horas, resto = divmod(int(segundos), 3600)
+    minutos = resto // 60
+    return f"{horas} h {minutos} min" if horas else f"{max(1, minutos)} min"
 
 
 # --- Orquestación ----------------------------------------------------------------------------
@@ -263,14 +366,14 @@ def extraer_comprobante(
         return {**base, "motor_extraccion": "local", "datos_enviados": texto_seudonimo,
                 "motivo": f"Gemini no respondió ({error}); se usó la extracción local."}, registro
 
-    remoto = reidentificar({k: crudo.get(k) for k in CAMPOS}, mapa)
+    remoto = sanear(reidentificar({k: crudo.get(k) for k in (*CAMPOS, "confianza")}, mapa))
     # Lo que se leyó localmente manda: no depende de la interpretación de un tercero.
     combinado = {k: local.get(k) or remoto.get(k) for k in CAMPOS}
     combinado["monto"] = int(combinado.get("monto") or 0)
     registro = _registro(usuario, config, tipo, categorias, medidas, huella, "ok", ahora)
     return {
         **combinado,
-        "confianza": crudo.get("confianza"),
+        "confianza": remoto["confianza"],
         "hash_comprobante": huella,
         "datos_enviados": texto_seudonimo,
         "motor_extraccion": "Gemini",

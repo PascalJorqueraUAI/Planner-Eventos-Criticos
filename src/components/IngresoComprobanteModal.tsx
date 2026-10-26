@@ -282,6 +282,12 @@ export const IngresoComprobanteModal: React.FC<Props> = ({ casos, config, abiert
               Extraer datos (opcional)
             </Boton>
             {imagenSinConfirmar && imagen && <p className="text-[11px] text-amber-300">Confirma el envío para extraer con Gemini.</p>}
+            {cargando && config.gemini_activo && (
+              <p className="text-[11px] text-slate-400">
+                Si se usa Gemini puede tardar hasta un minuto (con alta demanda se reintenta solo). Mientras tanto puedes
+                completar los datos a mano.
+              </p>
+            )}
 
             {extraccion && (
               <div className="rounded-lg border border-slate-800 bg-slate-950 p-2.5 text-[11px] space-y-1">

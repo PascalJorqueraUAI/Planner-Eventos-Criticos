@@ -37,6 +37,12 @@ TEXTO_FICTICIO = (
 
 @unittest.skipUnless(CONFIG.api_key, "Falta GEMINI_API_KEY en el .env (o es el valor de ejemplo)")
 class TestGeminiReal(unittest.TestCase):
+    def verificar_respuesta(self, datos, registro):
+        if registro.resultado == "error" and "cuota" in datos["motivo"]:
+            # Sin cuota no hay nada que probar: se informa en vez de marcar el código como roto.
+            self.skipTest(datos["motivo"])
+        self.assertEqual(registro.resultado, "ok", datos["motivo"])
+
     def test_el_modelo_configurado_existe(self):
         solicitud = urllib.request.Request(
             f"https://generativelanguage.googleapis.com/v1beta/models/{CONFIG.modelo}",
@@ -54,7 +60,7 @@ class TestGeminiReal(unittest.TestCase):
         datos, registro = extraer_comprobante(
             TEXTO_FICTICIO, None, None, False, "Prueba de integración", [NOMBRE_FICTICIO], CONFIG_PRUEBA, AHORA
         )
-        self.assertEqual(registro.resultado, "ok", datos["motivo"])
+        self.verificar_respuesta(datos, registro)
         self.assertEqual(datos["motor_extraccion"], "Gemini")
         for dato in ("11.111.111-1", "persona.prueba@ejemplo.cl", "12345-6", NOMBRE_FICTICIO):
             self.assertNotIn(dato, datos["datos_enviados"])
@@ -67,7 +73,7 @@ class TestGeminiReal(unittest.TestCase):
         datos, registro = extraer_comprobante(
             "", imagen, "image/png", True, "Prueba de integración", [], CONFIG_PRUEBA, AHORA
         )
-        self.assertEqual(registro.resultado, "ok", datos["motivo"])
+        self.verificar_respuesta(datos, registro)
         self.assertEqual(registro.tipo_entrada, "imagen")
         self.assertEqual(datos["monto"], 432100)
         self.assertEqual(datos["numero_operacion"], "DEMO-TRF-555123")
