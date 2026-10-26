@@ -26,11 +26,14 @@ body {
   font-family: var(--font-sans);
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
+/* En capa base: fuera de una capa, esta regla le ganaría a utilidades como text-xs. */
+@layer base {
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
 }
 
 button:focus-visible,

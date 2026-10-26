@@ -1,352 +1,199 @@
-import express from 'express';
+/**
+ * API REST de Cobgestion.
+ *
+ * Expone el motor Python (capa Controlador + Modelo) a la interfaz React (capa Vista)
+ * y a los sistemas actuales de Cobgestion (CRM, correo, planillas de mandantes).
+ * Cada request se traduce en un comando de python_engine/cli.py; las llamadas se
+ * encolan para que el repositorio nunca reciba dos escrituras simultáneas.
+ */
+import express, { type Request, type Response } from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { spawn } from 'child_process';
-import fs from 'fs';
 import dotenv from 'dotenv';
-import { GoogleGenAI, Type } from '@google/genai';
 
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
-app.use(express.json({ limit: '25mb' }));
+const PORT = Number(process.env.PORT) || 3000;
+const INTERVALO_ESCANEO_MS = 60_000;
+// Suficiente para un pantallazo re-codificado en el navegador (≤ 1600 px).
+app.use(express.json({ limit: '8mb' }));
 
 const pythonCommand = process.platform === 'win32' ? 'py' : 'python3';
 const pythonArgs = process.platform === 'win32' ? ['-3'] : [];
 
-// Helper to execute Python CLI engine
-function runPythonCli(command: string, args: Record<string, any> = {}): Promise<any> {
+class ErrorNegocio extends Error {}
+
+function ejecutarPython(comando: string, datos: Record<string, unknown> = {}): Promise<any> {
   return new Promise((resolve, reject) => {
-    const cliArgs = [...pythonArgs, 'python_engine/cli.py', command];
-
-    if (args.jsonInput) {
-      cliArgs.push('--json-input', JSON.stringify(args.jsonInput));
-    }
-    if (args.eventoId) {
-      cliArgs.push('--evento-id', args.eventoId);
-    }
-    if (args.accion) {
-      cliArgs.push('--accion', args.accion);
-    }
-    if (args.escrito) {
-      cliArgs.push('--escrito');
-    }
-    if (args.estadoPago) {
-      cliArgs.push('--estado-pago', args.estadoPago);
-    }
-    if (args.usuario) {
-      cliArgs.push('--usuario', args.usuario);
-    }
-    if (args.notas) {
-      cliArgs.push('--notas', args.notas);
-    }
-
-    const pyProcess = spawn(pythonCommand, cliArgs, {
+    const proceso = spawn(pythonCommand, [...pythonArgs, 'python_engine/cli.py', comando], {
       cwd: process.cwd(),
-      env: process.env,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
     });
-
-    let stdoutData = '';
-    let stderrData = '';
-
-    pyProcess.stdout.on('data', (chunk) => {
-      stdoutData += chunk.toString();
-    });
-
-    pyProcess.stderr.on('data', (chunk) => {
-      stderrData += chunk.toString();
-    });
-
-    pyProcess.on('close', (code) => {
-      if (code !== 0) {
-        console.error('Python CLI error:', stderrData);
-        return reject(new Error(stderrData || `Python exited with code ${code}`));
-      }
+    // Se acumulan bytes y se decodifica al final: un carácter UTF-8 puede quedar partido entre dos chunks.
+    const bytesSalida: Buffer[] = [];
+    const bytesError: Buffer[] = [];
+    proceso.stdout.on('data', (chunk: Buffer) => bytesSalida.push(chunk));
+    proceso.stderr.on('data', (chunk: Buffer) => bytesError.push(chunk));
+    proceso.on('error', reject);
+    proceso.on('close', () => {
+      const salida = Buffer.concat(bytesSalida).toString('utf8');
+      const errores = Buffer.concat(bytesError).toString('utf8');
       try {
-        const parsed = JSON.parse(stdoutData.trim());
-        resolve(parsed);
-      } catch (err) {
-        resolve({ rawOutput: stdoutData.trim() });
+        const respuesta = JSON.parse(salida.trim());
+        if (respuesta.ok) resolve(respuesta.datos);
+        else reject(new ErrorNegocio(respuesta.error));
+      } catch {
+        reject(new Error(errores || salida || 'El motor Python no devolvió JSON'));
       }
     });
+    proceso.stdin.end(JSON.stringify(datos));
   });
 }
 
-// Read raw state directly from data_store.json
-function getRepoData() {
-  const dataPath = path.join(process.cwd(), 'python_engine', 'data_store.json');
-  if (fs.existsSync(dataPath)) {
+// Cola: un comando a la vez sobre el repositorio.
+let cola: Promise<unknown> = Promise.resolve();
+function motor(comando: string, datos: Record<string, unknown> = {}): Promise<any> {
+  const siguiente = cola.then(() => ejecutarPython(comando, datos));
+  cola = siguiente.catch(() => undefined);
+  return siguiente;
+}
+
+function ruta(handler: (req: Request) => Promise<unknown>) {
+  return async (req: Request, res: Response) => {
     try {
-      const raw = fs.readFileSync(dataPath, 'utf-8');
-      return JSON.parse(raw);
-    } catch (e) {
-      console.error('Error reading data_store.json:', e);
+      res.json(await handler(req));
+    } catch (err: any) {
+      res.status(err instanceof ErrorNegocio ? 400 : 500).json({ error: err.message });
     }
-  }
-  return null;
-}
-
-// ---------------- API ENDPOINTS ---------------- //
-
-// GET Current State
-app.get('/api/state', async (_req, res) => {
-  try {
-    let data = getRepoData();
-    if (!data) {
-      await runPythonCli('status');
-      data = getRepoData();
-    }
-    res.json(data);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET Python Status
-app.get('/api/python/status', async (_req, res) => {
-  try {
-    const status = await runPythonCli('status');
-    res.json(status);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Run Python Unit Tests
-app.get('/api/python/run-tests', async (_req, res) => {
-  const pyProcess = spawn(pythonCommand, [...pythonArgs, 'python_engine/test_cobgestion.py'], {
-    cwd: process.cwd(),
-  });
-  let output = '';
-  pyProcess.stdout.on('data', (c) => (output += c.toString()));
-  pyProcess.stderr.on('data', (c) => (output += c.toString()));
-  pyProcess.on('close', (code) => {
-    res.json({
-      exitCode: code,
-      passed: code === 0,
-      output: output || 'OK',
-    });
-  });
-});
-
-// Export Excel CSVs
-app.post('/api/python/export-excel', async (_req, res) => {
-  try {
-    const result = await runPythonCli('export-excel');
-    res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Ingest unverified payment notice via Python
-app.post('/api/ingest/notice', async (req, res) => {
-  try {
-    const { aviso, usuario } = req.body;
-    const result = await runPythonCli('ingest-notice', {
-      jsonInput: aviso,
-      usuario: usuario || 'Ejecutivo Comercial',
-    });
-    res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Resolve Judicial Task
-app.post('/api/events/resolve-judicial', async (req, res) => {
-  try {
-    const { eventoId, accion, escrito, usuario, notas } = req.body;
-    const result = await runPythonCli('resolve-judicial', {
-      eventoId,
-      accion,
-      escrito: Boolean(escrito),
-      usuario: usuario || 'Abg. Rodrigo Morales',
-      notas: notas || '',
-    });
-    res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Resolve Commercial Task
-app.post('/api/events/resolve-commercial', async (req, res) => {
-  try {
-    const { eventoId, estadoPago, usuario, notas } = req.body;
-    const result = await runPythonCli('resolve-commercial', {
-      eventoId,
-      estadoPago,
-      usuario: usuario || 'Camila Valenzuela',
-      notas: notas || '',
-    });
-    res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Reconcile Mandante Batch
-app.post('/api/mandante/reconcile-batch', async (req, res) => {
-  try {
-    const { lote, usuario } = req.body;
-    const result = await runPythonCli('reconcile-batch', {
-      jsonInput: lote,
-      usuario: usuario || 'Sistema Batch Mandante',
-    });
-    res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Reset Data to Default
-app.post('/api/state/reset', async (_req, res) => {
-  try {
-    const result = await runPythonCli('reset-data');
-    res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ---------------- GEMINI AI UNSTRUCTURED OCR / EXTRACTION ---------------- //
-app.post('/api/gemini/extract-receipt', async (req, res) => {
-  try {
-    const { text, imageBase64, mimeType } = req.body;
-
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
-      // Intelligent fallback heuristic parser if no API key is set
-      const extracted = fallbackExtract(text || '');
-      return res.json(extracted);
-    }
-
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
-    });
-
-    const parts: any[] = [];
-
-    if (imageBase64) {
-      parts.push({
-        inlineData: {
-          mimeType: mimeType || 'image/jpeg',
-          data: imageBase64.replace(/^data:image\/[a-z]+;base64,/, ''),
-        },
-      });
-    }
-
-    const promptText = `
-Eres el extractor oficial de comprobantes de pago de la empresa LegalTech Cobgestion en Chile.
-Analiza este comprobante de transferencia bancaria, correo electrónico o pantallazo de WhatsApp y extrae los datos clave en formato JSON estructurado:
-
-- monto: número entero en pesos chilenos (sin puntos ni signo $)
-- banco_origen: banco emisor (ej: Banco de Chile, Santander, BancoEstado, BCI, Scotiabank, Itaú, Banco Falabella, etc.)
-- banco_destino: banco receptor
-- numero_operacion: código o número de transferencia / comprobante / operación
-- rut_depositante: RUT chileno con formato (ej: 16.482.910-K)
-- nombre_depositante: nombre de la persona o empresa que transfirió
-- fecha_hora_operacion: fecha y hora de la transacción
-- comentario: glosa o mensaje de la transferencia
-- confianza_ia: número de 0.0 a 1.0 indicando nivel de certidumbre
-- resumen_ejecutivo: breve resumen de 1 oración del comprobante
-
-Texto adicional adjunto: ${text || 'Sin texto adicional, analiza la imagen'}
-`;
-
-    parts.push({ text: promptText });
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: { parts },
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            monto: { type: Type.INTEGER },
-            banco_origen: { type: Type.STRING },
-            banco_destino: { type: Type.STRING },
-            numero_operacion: { type: Type.STRING },
-            rut_depositante: { type: Type.STRING },
-            nombre_depositante: { type: Type.STRING },
-            fecha_hora_operacion: { type: Type.STRING },
-            comentario: { type: Type.STRING },
-            confianza_ia: { type: Type.NUMBER },
-            resumen_ejecutivo: { type: Type.STRING },
-          },
-          required: ['monto', 'banco_origen', 'numero_operacion'],
-        },
-      },
-    });
-
-    const rawJson = response.text?.trim() || '{}';
-    const parsed = JSON.parse(rawJson);
-    return res.json(parsed);
-  } catch (err: any) {
-    console.error('Gemini extraction error:', err);
-    // Graceful fallback to heuristic extraction
-    const fallback = fallbackExtract(req.body.text || '');
-    return res.json(fallback);
-  }
-});
-
-function fallbackExtract(text: string) {
-  const montoMatch = text.match(/\$?\s*([\d.]+)/);
-  const rutMatch = text.match(/(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])/);
-  const opMatch = text.match(/(?:operaci[oó]n|transacci[oó]n|n[uú]mero|c[oó]digo|trf)[:\s#]*([a-zA-Z0-9-]+)/i);
-
-  let monto = 850000;
-  if (montoMatch) {
-    const rawNum = montoMatch[1].replace(/\./g, '');
-    const n = parseInt(rawNum, 10);
-    if (!isNaN(n) && n > 1000) monto = n;
-  }
-
-  return {
-    monto,
-    banco_origen: text.toLowerCase().includes('santander')
-      ? 'Banco Santander'
-      : text.toLowerCase().includes('chile')
-      ? 'Banco de Chile'
-      : text.toLowerCase().includes('estado')
-      ? 'BancoEstado'
-      : 'Banco de Chile',
-    banco_destino: 'Banco Santander (Cobgestion / Mandante)',
-    numero_operacion: opMatch ? opMatch[1] : `TRF-${Math.floor(1000000 + Math.random() * 9000000)}`,
-    rut_depositante: rutMatch ? rutMatch[1] : '16.482.910-K',
-    nombre_depositante: 'Carlos Silva Mendoza',
-    fecha_hora_operacion: new Date().toLocaleString('es-CL'),
-    comentario: 'Comprobante extraído automáticamente por motor OCR Cobgestion',
-    confianza_ia: 0.94,
-    resumen_ejecutivo: `Transferencia detectada por $${monto.toLocaleString('es-CL')} CLP.`,
   };
 }
 
-// ---------------- FRONTEND VITE INTEGRATION ---------------- //
+const usuario = (req: Request, porDefecto: string) =>
+  (req.body?.usuario as string) || (req.header('X-Usuario') as string) || porDefecto;
+
+// ---------------- Repositorio centralizado ---------------- //
+app.get('/api/v1/estado', ruta(() => motor('estado')));
+app.get('/api/v1/casos', ruta(async () => (await motor('estado')).casos));
+app.get('/api/v1/casos/:id', ruta((req) => motor('caso', { caso_id: req.params.id })));
+
+// Integración: el CRM informa un cambio en un caso.
+app.patch(
+  '/api/v1/casos/:id',
+  ruta((req) =>
+    motor('actualizar-caso', {
+      caso_id: req.params.id,
+      cambios: req.body.cambios ?? req.body,
+      usuario: usuario(req, 'Integración CRM'),
+    }),
+  ),
+);
+
+// Integración: comprobante no estructurado ya extraído (WhatsApp, correo, aviso bancario).
+app.post(
+  '/api/v1/avisos',
+  ruta((req) => motor('ingresar-aviso', { aviso: req.body.aviso ?? req.body, usuario: usuario(req, 'Ingesta de comprobantes') })),
+);
+
+// Integración: planilla estructurada de un mandante.
+app.post(
+  '/api/v1/planillas-mandante',
+  ruta((req) => motor('conciliar-planilla', { registros: req.body.registros, usuario: usuario(req, 'Planilla mandante') })),
+);
+
+app.post('/api/v1/exportar', ruta(() => motor('exportar')));
+app.post('/api/v1/reiniciar', ruta(() => motor('reiniciar')));
+
+// ---------------- Detector de eventos críticos ---------------- //
+app.get('/api/v1/eventos', ruta(async () => (await motor('estado')).eventos));
+app.post('/api/v1/detector/escanear', ruta(() => motor('escanear')));
+
+// ---------------- Asignación y seguimiento ---------------- //
+app.get('/api/v1/tareas', ruta(async () => (await motor('estado')).tareas));
+app.post(
+  '/api/v1/tareas/:id/atender',
+  ruta((req) =>
+    motor('atender-tarea', {
+      tarea_id: req.params.id,
+      resultado: req.body.resultado,
+      notas: req.body.notas ?? '',
+      usuario: usuario(req, 'Responsable'),
+    }),
+  ),
+);
+app.post(
+  '/api/v1/tareas/:id/reasignar',
+  ruta((req) =>
+    motor('reasignar-tarea', { tarea_id: req.params.id, motivo: req.body.motivo ?? '', usuario: usuario(req, 'Jefatura') }),
+  ),
+);
+app.get('/api/v1/colaboradores', ruta(async () => (await motor('estado')).colaboradores));
+app.patch(
+  '/api/v1/colaboradores/:id/disponibilidad',
+  ruta((req) =>
+    motor('disponibilidad', {
+      colaborador_id: req.params.id,
+      disponible: Boolean(req.body.disponible),
+      motivo: req.body.motivo ?? '',
+      usuario: usuario(req, 'Jefatura'),
+    }),
+  ),
+);
+
+// Integración: RR.HH. o el CRM informan vacaciones, permisos o feriados de un colaborador.
+app.post(
+  '/api/v1/colaboradores/:id/ausencias',
+  ruta((req) =>
+    motor('registrar-ausencia', {
+      colaborador_id: req.params.id,
+      desde: req.body.desde,
+      hasta: req.body.hasta,
+      motivo: req.body.motivo ?? '',
+      usuario: usuario(req, 'Calendario RR.HH.'),
+    }),
+  ),
+);
+
+// ---------------- Dashboard de trazabilidad ---------------- //
+app.get('/api/v1/metricas', ruta(async () => (await motor('estado')).metricas));
+
+// ---------------- Extracción de comprobantes (complementaria al registro) ---------------- //
+// Corre fuera de la cola: Gemini puede tardar segundos y la extracción solo lee el repositorio.
+// El cuerpo de la solicitud (comprobante) nunca se registra en los logs.
+app.post(
+  '/api/v1/extraer-comprobante',
+  ruta(async (req) => {
+    const { texto, imagen_base64, mime_type, confirmacion_operador } = req.body;
+    const { datos, tratamiento } = await ejecutarPython('extraer-comprobante', {
+      texto,
+      imagen_base64,
+      mime_type,
+      confirmacion_operador,
+      usuario: usuario(req, 'Operador de ingesta'),
+    });
+    if (tratamiento) await motor('registrar-tratamiento', { tratamiento });
+    return datos;
+  }),
+);
+
+// ---------------- Vista (Vite / estáticos) ---------------- //
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
+    const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' });
     app.use(vite.middlewares);
   } else {
     app.use(express.static(path.resolve('dist')));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.resolve('dist/index.html'));
-    });
+    app.get('*', (_req, res) => res.sendFile(path.resolve('dist/index.html')));
   }
 
+  // El detector compara constantemente el estado de los casos contra el catálogo.
+  setInterval(() => {
+    motor('escanear').catch((err) => console.error('Escaneo periódico falló:', err.message));
+  }, INTERVALO_ESCANEO_MS);
+
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Cobgestion LegalTech Server running on http://0.0.0.0:${PORT}`);
+    console.log(`Cobgestion API REST en http://localhost:${PORT}/api/v1`);
   });
 }
 
