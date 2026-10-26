@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+__pycache__/
+*.pyc
+python_engine/data_store.json
+python_engine/data_store.json.tmp
+exports/

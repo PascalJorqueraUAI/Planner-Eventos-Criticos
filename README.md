@@ -1,213 +1,237 @@
-# Cobgestion LegalTech - Sistema Integrado de Detección de Eventos Críticos
+# Cobgestion · Sistema Integrado de Eventos Críticos
 
-Plataforma integral LegalTech desarrollada para **Cobgestion**, especializada en la cobranza judicial y extrajudicial. El sistema resuelve el cuello de botella de coordinación entre el **Área Comercial** y el **Área Judicial**, procesando tanto datos no estructurados (pantallazos de WhatsApp, transferencias bancarias por correo) como planillas estructuradas de mandantes (bancos y financieras), implementando un motor de reglas en **Python 3.10** y una interfaz interactiva de gestión en tiempo real.
+Prototipo para **Cobgestion**, empresa LegalTech de cobranza judicial y extrajudicial, que reduce los desfases de información entre el **Área Comercial** (análisis de datos y gestión de cobranza) y el **Área Judicial** (gestión de causas y recuperación de acreencias).
 
----
+> **¿Primera vez?** Ve directo a la [Guía para el equipo](#guía-para-el-equipo-correr-el-sistema).
 
-## 📌 Contexto y Problema de Negocio
+## Problema
 
-En la cobranza judicial, un desfasaje de información entre Comercial y Judicial puede ocasionar graves pérdidas económicas y daños reputacionales:
+Cobgestion trabaja con un sistema híbrido de CRM y planillas. Los pagos quedan en planillas comerciales sin conciliar y se cruzan cada cierto tiempo contra las planillas de los mandantes. Además, muchos pagos llegan como **datos no estructurados**: pantallazos que los clientes envían por correo o WhatsApp, o correos automáticos del banco.
 
-> **Caso Real de Referencia:**
-> Un día viernes se recibió un comprobante de pago por transferencia. Debido a un fin de semana largo, la ejecutiva comercial lo revisó el martes y tardó en procesarlo. Como el área Judicial no tenía conocimiento de este antecedente, el caso judicial continuó sin suspensión y **se incautó indebidamente el vehículo del deudor**. Cobgestion tuvo que asumir los costos de grúa, receptor, custodia y costas judiciales (~**$600.000 CLP**) para restituir el automóvil.
+> **Caso real.** Un viernes llegó un comprobante de pago. Por el feriado del lunes, la ejecutiva lo vio el martes y tampoco se procesó a tiempo. Judicial no sabía del pago, la causa siguió y **se incautó el vehículo del deudor**. Cobgestion asumió las costas y devolvió el auto: unos **$600.000 CLP** perdidos por un error de coordinación.
 
-### Solución Implementada:
-1. **Definición de Evento Crítico:** Cualquier antecedente relevante (como un aviso de pago aún sin conciliar) que requiere que otra área tome una decisión en un plazo definido.
-2. **Detección Inmediata:** Todo comprobante en estado `Informado / por confirmar` dispara **inmediatamente** una alerta judicial preventiva (SLA 4 horas en casos vehiculares), sin esperar a la conciliación definitiva de Comercial.
-3. **Gestión Paralela:** Se crean dos tareas simultáneas e independientes (una para Comercial y otra para Judicial).
-4. **Regla de Cierre Coordinado:** El evento crítico **no se cierra** si Comercial confirma el pago pero Judicial aún no suspende la causa en tribunales.
+**Evento crítico:** un cambio o antecedente relevante de un caso que requiere que otra área revise su gestión, tome una decisión o actúe dentro de un plazo definido. Incluye un comprobante que todavía está pendiente de verificación.
 
----
+## Los 4 módulos
 
-## 🚀 Requisitos Previos
+| # | Módulo | Qué hace | Dónde vive |
+|---|---|---|---|
+| 1 | **Repositorio centralizado** | Planilla única con el estado actual de cada caso, sus avisos de pago, la última actualización y el historial de cambios (campo, valor anterior, valor nuevo, quién y cuándo). Recibe datos del CRM, de los comprobantes no estructurados y de las planillas de mandantes. Exporta a Excel. | `modelo/repositorio.py`, `RepositorioView.tsx` |
+| 2 | **Detector de eventos críticos** | Compara el estado de todos los casos contra un **catálogo de eventos** (cada minuto y después de cada cambio) y crea el evento y sus tareas paralelas cuando una regla se cumple. | `controlador/catalogo_eventos.py`, `controlador/detector.py`, `DetectorView.tsx` |
+| 3 | **Asignación y seguimiento** | Asigna cada tarea con una **matriz RACI** y un **modelo de asignación óptima** (método húngaro) según el historial, la disponibilidad y la carga de los colaboradores. La tarea queda *Pendiente* hasta que se marca *Atendida*. | `controlador/asignador.py`, `controlador/seguimiento.py`, `AsignacionView.tsx` |
+| 4 | **Dashboard de trazabilidad** | Estado real de los casos y métricas de desempeño: SLA, tareas vencidas, desfase aviso→alerta, carga por colaborador, riesgo expuesto y cubierto, y registro de auditoría. | `controlador/trazabilidad.py`, `DashboardView.tsx` |
 
-- **Node.js** >= 18.x (incluye `npm` y `npx`)
-- **Python** >= 3.10 (con módulos de biblioteca estándar: `unittest`, `json`, `csv`, `dataclasses`)
-- *(Opcional)* **Clave de API Gemini (`GEMINI_API_KEY`)**: Para la extracción asistida por visión/OCR multimodal con el modelo `gemini-3.8-flash`. Si no se configura una clave, el sistema utiliza un extractor heurístico inteligente de respaldo.
+### Catálogo de eventos críticos
 
----
+| Código | Evento | Condición | Tareas paralelas |
+|---|---|---|---|
+| EC-01 | Pago informado pendiente de verificación | Aviso en estado *informado* | Comercial verifica el pago · Judicial evalúa suspender apremios |
+| EC-02 | Pago observado con diferencias | Aviso en estado *observado* | Comercial aclara la diferencia · Judicial evalúa el curso de la causa |
+| EC-03 | Pago confirmado con causa activa | Aviso *confirmado*, causa no suspendida formalmente ni terminada | Judicial presenta la suspensión formal o el término · Comercial registra el pago en el CRM |
+| EC-04 | Diligencia inminente con negociación abierta | Apremio en curso, diligencia en ≤ 72 h y negociación vigente | Judicial confirma o reprograma con el receptor · Comercial contacta al deudor |
+| EC-05 | Convenio incumplido con causa suspendida | Convenio incumplido y causa suspendida | Judicial evalúa reactivar · Comercial intenta repactar |
 
-## 🛠️ Instalación y Puesta en Marcha
+Si la causa tiene un **apremio en curso** (embargo, orden de incautación o receptor programado), el evento sube a **CRÍTICO**, se marca un riesgo de $600.000 y el SLA judicial baja a **4 horas**. Desde el estado *informado* se alerta a Judicial: no se espera la conciliación.
 
-### 1. Clonar el Repositorio
-```bash
-git clone <URL_DE_TU_REPOSITORIO_GITHUB>
-cd cobgestion-legaltech
+**Cierre coordinado:** un evento solo se cierra cuando **todas** sus tareas están atendidas. Que Comercial confirme el pago no cierra el evento si Judicial aún no suspendió la diligencia.
+
+### Modelo de asignación (RACI + investigación de operaciones)
+
+1. **Matriz RACI por tipo de tarea.** Define qué cargo es **R**esponsable de ejecutarla, quién **A**prueba y recibe escalamientos (jefatura), a quién se **C**onsulta y a quién se **I**nforma.
+2. **Problema de asignación.** Entre los colaboradores con el cargo R:
+
+   ```
+   max  Σ puntaje(c, t) · x(c, t)
+   s.a. cada tarea tiene exactamente un responsable
+        Σ_t x(c, t) ≤ capacidad libre de c
+        x(c, t) = 0 si c no está disponible, no tiene la competencia o no tiene el cargo R
+
+   puntaje = w_exp·experiencia + w_des·desempeño + w_disp·disponibilidad + w_cont·continuidad
+     experiencia    = n / (n + 5)              n = tareas de ese tipo ya atendidas
+     desempeño      = (cumplidas_SLA + 1) / (n + 2)
+     disponibilidad = 1 − carga / capacidad    carga = tareas del CRM + pendientes del sistema
+     continuidad    = 1 si es el titular del caso
+   ```
+
+   Pesos normales: 30 / 25 / 30 / 15. En tareas **críticas** pesa más que alguien la tome ya y la cumpla a tiempo: 20 / 30 / 40 / 10.
+3. Se resuelve con el **método húngaro** sobre todas las tareas nuevas a la vez (matriz tareas × cupos de capacidad). Si no hay nadie factible, la tarea **se escala** a la jefatura (A).
+4. Cada tarea atendida alimenta el historial de su responsable.
+
+**Qué es automático y qué es manual.** El sistema no espera a que un jefe reparta el trabajo. En cada ciclo del detector (cada minuto y después de cada cambio):
+
+| Automatismo | Qué hace |
+|---|---|
+| Asignación | Toda tarea nueva recibe responsable y RACI en el momento en que se detecta el evento. |
+| Calendario de ausencias | Las ausencias se programan con anticipación (desde la interfaz o vía `POST /api/v1/colaboradores/:id/ausencias`, pensado para RR.HH. o el CRM). Al empezar, el colaborador queda no disponible y sus tareas se reasignan; al terminar, vuelve solo. |
+| Ausencias futuras | No se asigna una tarea a quien se ausentará antes de su vencimiento. Al programar una ausencia, las tareas que vencen dentro de ella se reasignan de inmediato. |
+| Escalamiento por vencimiento | Una tarea que vence se reasigna al mejor colaborador alternativo con la mitad del SLA como plazo, y el incumplimiento queda en el historial del responsable original. Si también vence ese plazo, pasa a la jefatura (A). |
+
+Lo único manual es **marcar la tarea como atendida** con su resultado. Reasignar a pedido o marcar una ausencia imprevista quedan como excepciones. En el sandbox, la titular comercial del caso del auto tiene un permiso en el calendario: el sistema la marca no disponible solo y asigna el comprobante a otra persona.
+
+La interfaz muestra, para cada tarea, el ranking de candidatos, el puntaje por criterio y el motivo por el que cada persona quedó excluida.
+
+## Extracción de comprobantes y protección de datos personales
+
+La extracción con IA es **complementaria al registro**: solo prellena el formulario. El comprobante siempre se puede registrar a mano, y nada se registra sin que una persona revise los datos. El diseño considera la Ley 19.628, hoy vigente, y la Ley 21.719, que entra en vigencia el 1 de diciembre de 2026.
+
+| Principio | Cómo se aplica (`python_engine/controlador/extraccion.py`) |
+|---|---|
+| Proporcionalidad | Primero se extrae localmente. Gemini solo se usa con una imagen o si el texto no alcanzó para obtener monto, RUT y N° de operación. |
+| Minimización / seudonimización | Antes de enviar texto, RUT, correos, teléfonos, números de cuenta y nombres de deudores conocidos se reemplazan por marcadores (`[RUT_1]`). La respuesta se reidentifica en el servidor. El operador puede ver exactamente qué texto salió. |
+| Imágenes | Se recodifican en el navegador, sin metadatos EXIF/GPS y a un máximo de 1600 px. Como no se pueden seudonimizar, el operador confirma cada envío. Nunca se almacenan: solo su hash SHA-256. |
+| Licitud y transferencia internacional | Gemini permanece apagado hasta que `GEMINI_TRATAMIENTO_AUTORIZADO=si`. Ver la lista de requisitos más abajo. |
+| Responsabilidad | Cada envío queda en el **registro de tratamientos** (operador, fecha, finalidad, proveedor, ubicación, categorías de datos, medidas y hash, sin el contenido). Se ve en el Dashboard y se exporta a Excel. |
+| Supervisión humana | Los datos extraídos son editables. Lo que se lee localmente prevalece sobre lo que interpreta el tercero. |
+
+**Antes de activar Gemini** (`GEMINI_TRATAMIENTO_AUTORIZADO=si`), Cobgestion debe:
+
+1. Activar la facturación en el proyecto de Google Cloud. En el plan gratuito, Google puede usar los datos para mejorar sus productos y personas pueden revisarlos. En el plan pagado, no los usa para entrenar y actúa como encargado del tratamiento.
+2. Aceptar el anexo de procesamiento de datos (DPA) de Google.
+3. Definir la base legal de la transferencia internacional (por ejemplo, cláusulas contractuales modelo).
+4. Informar este tratamiento en su política de privacidad y en su registro de actividades.
+
+Esto requiere validación legal: el sistema aporta las medidas técnicas, no reemplaza esa revisión.
+
+## Arquitectura
+
+**Modelo-Vista-Controlador (MVC):**
+
+```
+python_engine/
+├── modelo/                    MODELO: datos y acceso al repositorio
+│   ├── entidades.py           Esquema de cada hoja (Caso, AvisoPago, EventoCritico, Tarea, Colaborador…)
+│   ├── repositorio.py         Persistencia JSON, historial de cambios, exportación CSV
+│   └── datos_iniciales.py     Datos del sandbox (casos, colaboradores e historial de desempeño)
+├── controlador/               CONTROLADOR: reglas de negocio
+│   ├── catalogo_eventos.py    Catálogo declarativo de eventos críticos
+│   ├── detector.py            Detector de eventos (idempotente)
+│   ├── asignador.py           Matriz RACI + método húngaro
+│   ├── seguimiento.py         Atender, cierre coordinado, calendario de ausencias, escalamiento
+│   ├── conciliador.py         Planillas estructuradas de mandantes
+│   ├── extraccion.py          Extracción local + Gemini con seudonimización y registro de tratamientos
+│   ├── trazabilidad.py        Métricas del dashboard
+│   └── servicio.py            Casos de uso; cada cambio dispara un ciclo de detección
+├── tests/                     Pruebas unitarias por componente (unittest)
+└── cli.py                     Punto de entrada: comando + JSON por stdin → JSON por stdout
+server.ts                      API REST /api/v1 (Express)
+src/                           VISTA: React + Tailwind (una vista por módulo)
 ```
 
-### 2. Configurar Variables de Entorno
-Crea tu archivo `.env` a partir del ejemplo:
+### API REST (integración con los sistemas de Cobgestion)
+
+| Método | Ruta | Uso |
+|---|---|---|
+| GET | `/api/v1/estado` | Estado completo para la Vista |
+| GET | `/api/v1/casos`, `/api/v1/casos/:id` | Casos (con avisos, eventos, tareas e historial) |
+| PATCH | `/api/v1/casos/:id` | **El CRM informa un cambio en un caso** (estado comercial/judicial, fecha de diligencia, titulares) |
+| POST | `/api/v1/avisos` | Comprobante no estructurado ya extraído; se asocia por `caso_id` o por RUT |
+| POST | `/api/v1/planillas-mandante` | Planilla estructurada de un mandante |
+| POST | `/api/v1/extraer-comprobante` | `{ texto, imagen_base64?, confirmacion_operador? }`: prellena monto, RUT y N° de operación (local o Gemini, con los resguardos descritos) |
+| GET / POST | `/api/v1/eventos`, `/api/v1/detector/escanear` | Eventos y escaneo manual |
+| GET | `/api/v1/tareas` | Tareas con indicador de vencimiento |
+| POST | `/api/v1/tareas/:id/atender` | `{ resultado, notas }`: marca la tarea como atendida |
+| POST | `/api/v1/tareas/:id/reasignar` | Reasigna excluyendo al responsable actual |
+| PATCH | `/api/v1/colaboradores/:id/disponibilidad` | `{ disponible, motivo }`: cambio manual; reasigna las pendientes |
+| POST | `/api/v1/colaboradores/:id/ausencias` | `{ desde, hasta, motivo }`: ausencia programada (RR.HH. / CRM) |
+| GET | `/api/v1/metricas` | Métricas del dashboard |
+| POST | `/api/v1/exportar` · `/api/v1/reiniciar` | Exportar a CSV · recargar el sandbox |
+
+Ejemplo, el CRM avisa que una causa tiene orden de incautación con diligencia mañana:
+
 ```bash
-cp .env.example .env
+curl -X PATCH http://localhost:3000/api/v1/casos/CASO-1055 \
+  -H "Content-Type: application/json" \
+  -d '{"cambios": {"estado_judicial": "Orden de incautación vigente", "estado_comercial": "En negociación", "fecha_diligencia": "2026-10-27T10:00:00"}}'
 ```
 
-Contenido del archivo `.env`:
-```env
-# Clave para OCR y extracción estructurada con IA (opcional, cuenta con fallback automático)
-GEMINI_API_KEY="TU_API_KEY_DE_GEMINI"
+La respuesta incluye `deteccion.eventos_nuevos` con el evento EC-04 ya creado y asignado.
 
-# Puerto y URL de la aplicación
-PORT=3000
-APP_URL="http://localhost:3000"
-```
+## Guía para el equipo: correr el sistema
 
-### 3. Instalar Dependencias del Proyecto
+### 1. Requisitos
+
+| Herramienta | Versión | Cómo verificar |
+|---|---|---|
+| Node.js | 20.19 o superior | `node --version` |
+| Python | 3.10 o superior (solo biblioteca estándar, sin `pip install`) | Windows: `py -3 --version` · macOS/Linux: `python3 --version` |
+| Git | cualquiera reciente | `git --version` |
+
+### 2. Instalar
+
 ```bash
+git clone <URL_DEL_REPOSITORIO>
+cd Planner-Eventos-Criticos
+git checkout refactor/cuatro-modulos-mvc   # mientras no esté fusionada en main
 npm install
 ```
 
-### 4. Ejecutar el Servidor Full-Stack (Desarrollo)
-El servidor Express monta la API, ejecuta el motor de Python como subproceso e inicia la interfaz Vite en el puerto 3000:
+### 3. Configurar el `.env`
+
+```bash
+cp .env.example .env      # en PowerShell: Copy-Item .env.example .env
+```
+
+El sistema funciona **sin clave de Gemini**: la extracción de comprobantes queda solo local y los datos se completan a mano. Para usar Gemini:
+
+1. Cada integrante crea **su propia** clave en [Google AI Studio](https://aistudio.google.com/apikey) y la pega en `GEMINI_API_KEY`. **Nunca subas el `.env` ni compartas la clave por el chat del grupo**: el `.gitignore` ya lo excluye.
+2. Guarda el archivo y comprueba que la clave y el modelo funcionan: `npm run test:gemini`.
+3. Para que la interfaz use Gemini, cambia `GEMINI_TRATAMIENTO_AUTORIZADO="si"`. Hazlo **solo con datos de prueba**. Con datos reales de deudores, antes hay que cumplir los requisitos de la sección [Extracción de comprobantes y protección de datos personales](#extracción-de-comprobantes-y-protección-de-datos-personales).
+
+### 4. Levantar la aplicación
+
 ```bash
 npm run dev
 ```
 
-Abre tu navegador en:
-```
-http://localhost:3000
-```
+Abre <http://localhost:3000>. La primera vez se crea `python_engine/data_store.json` con los datos del sandbox (no se versiona). El botón **Reiniciar sandbox** vuelve al estado inicial.
 
----
+En Windows, ejecuta los comandos desde **PowerShell** o la terminal de VS Code, no desde Git Bash (ver problemas frecuentes).
 
-## 🐍 Ejecución Directa del Motor Python (CLI & Scripts)
+### 5. Recorrido sugerido para la demo
 
-El núcleo de reglas de negocio está implementado en Python y puede ser ejecutado directamente desde la terminal o integrado en pipelines automatizados:
+1. **Repositorio:** abre CASO-1052 (el auto Suzuki) y revisa su historial de cambios.
+2. **Detector:** hay 5 eventos detectados al cargar el sandbox. EC-01 es el comprobante del auto, con prioridad crítica y SLA judicial de 4 h.
+3. **Asignación:** en "¿Por qué esta persona?" se ve que Camila, titular del caso, quedó excluida por su permiso en el calendario. Programa una ausencia a otro colaborador y mira cómo se reasignan sus tareas.
+4. **Cierre coordinado:** marca como atendida la tarea comercial ("Pago confirmado"). El evento sigue abierto hasta que Judicial atienda la suya.
+5. **Repositorio → Registrar comprobante:** registra el correo del camión KR-WP-19. El detector crea el evento en el acto.
+6. **Trazabilidad:** métricas, carga por colaborador, auditoría y registro de tratamientos de datos.
 
-### Consultar el Estado del Repositorio y Ahorros
-```powershell
-py -3 python_engine/cli.py status
-```
-En macOS/Linux usa `python3 python_engine/cli.py status`.
-*Salida en JSON con total de casos, eventos activos, alertas judiciales pendientes y CLP ahorrado en costas prevenidas.*
+### 6. Pruebas
 
-### Ejecutar la Suite de Pruebas Unitarias de Python
-```powershell
-py -3 python_engine/test_cobgestion.py
-# O mediante npm:
-npm run test:py
-```
-En macOS/Linux sustituye `py -3` por `python3`.
-*Ejecuta 5 pruebas formales con `unittest` que validan la detección inmediata, la regla de bloqueo de cierre prematuro, el riesgo de 600.000 CLP y la conciliación batch.*
+| Comando | Qué hace | Red |
+|---|---|---|
+| `npm test` | Pruebas unitarias del motor Python (detector, asignación, seguimiento, extracción, privacidad) | No |
+| `npm run lint` | Chequeo de tipos de la Vista y la API | No |
+| `npm run test:gemini` | Integración **real** con Gemini usando solo datos ficticios (texto y `tests/fixtures/comprobante_ficticio.png`). Se omite si no hay clave. | Sí, consume cuota |
 
-### Exportar las 6 Hojas del Repositorio a Excel / CSV
-```powershell
-py -3 python_engine/cli.py export-excel
-```
-En macOS/Linux usa `python3 python_engine/cli.py export-excel`.
-*Genera los archivos compatibles con Excel en `./exports/`: `Cobgestion_Casos.csv`, `Cobgestion_Avisos_Pago.csv`, `Cobgestion_Eventos_Criticos.csv`, `Cobgestion_Tareas.csv`, `Cobgestion_Pagos_Conciliados.csv` e `Cobgestion_Historial.csv`.*
-
-### Restablecer Caso Demostrativo
-```powershell
-py -3 python_engine/cli.py reset-data
-```
-En macOS/Linux usa `python3 python_engine/cli.py reset-data`.
-
----
-
-## 🧪 Pruebas Unitarias Automatizadas
-
-El proyecto cuenta con suites de pruebas unitarias tanto en Python como en TypeScript:
+### 7. Uso del motor sin la interfaz
 
 ```bash
-# Correr tests unitarios de Python
-npm run test:py
-
-# Correr tests unitarios de TypeScript (Node.js test runner nativo)
-npm test
-
-# Validación estática de tipos (TypeScript)
-npm run lint
+py -3 python_engine/cli.py estado       # macOS/Linux: python3 python_engine/cli.py estado
+py -3 python_engine/cli.py escanear
+py -3 python_engine/cli.py exportar     # CSV para Excel en ./exports
+py -3 python_engine/cli.py reiniciar
 ```
 
----
+### Problemas frecuentes
 
-## 🏛️ Arquitectura y Detalle de Módulos
+| Síntoma | Causa y solución |
+|---|---|
+| `spawn py ENOENT` o "no se encontró py" | En Windows, Git Bash no ve el lanzador `py`. Usa PowerShell. Si tampoco funciona ahí, instala Python desde python.org marcando "py launcher". |
+| `EADDRINUSE ... 3000` | Ya hay otra instancia corriendo. Ciérrala (Ctrl+C en su terminal) o cambia `PORT` en el `.env`. |
+| La interfaz falla tras actualizar el código | El `data_store.json` quedó con un formato anterior. Presiona **Reiniciar sandbox** o borra `python_engine/data_store.json`. |
+| `npm run test:gemini` dice "skipped" | No hay clave en el `.env`, o el archivo no se guardó. |
+| `npm run test:gemini` falla con HTTP 404 en el modelo | El modelo de `GEMINI_MODEL` no está disponible para tu clave: revisa los nombres vigentes en la [documentación de modelos](https://ai.google.dev/gemini-api/docs/models). |
+| Gemini responde 429 | Se acabó la cuota del plan. Espera o revisa la facturación del proyecto. |
 
-```
-cobgestion-legaltech/
-├── python_engine/                     # Motor Central en Python 3.10
-│   ├── models.py                      # Dataclasses de las 6 entidades del repositorio
-│   ├── detector_eventos.py            # Reglas de negocio, SLA y validación de cierre
-│   ├── conciliador_mandantes.py       # Algoritmo de conciliación de planillas estructuradas
-│   ├── repositorio_cobgestion.py      # Persistencia, auditoría y exportación a Excel
-│   ├── cli.py                         # Interfaz CLI invocada por Express y scripts
-│   ├── test_cobgestion.py             # Suite formal de pruebas con unittest
-│   └── data_store.json                # Base de datos centralizada
-├── src/                               # Frontend React + Tailwind CSS
-│   ├── components/
-│   │   ├── Header.tsx                 # Banner de alerta crítica y contadores en vivo
-│   │   ├── CriticalEventsView.tsx     # Gestión paralela dual (Comercial vs Judicial)
-│   │   ├── JudicialModule.tsx         # Radar de causas y generador de escritos OJV
-│   │   ├── CommercialModule.tsx       # Bandeja de verificación de comprobantes
-│   │   ├── UnstructuredIngestionModal.tsx # OCR asistido por IA (Gemini 3.8 Flash)
-│   │   ├── MandanteReconcileView.tsx  # Cruce batch de planillas de mandantes
-│   │   ├── PythonEngineConsole.tsx    # Terminal interactiva y visor de código Python
-│   │   ├── TraceabilityDashboard.tsx  # Métricas de impacto y registro de auditoría
-│   │   └── CaseDetailsModal.tsx       # Ficha del expediente judicial
-│   ├── domain/                        # Tipos e interfaces TypeScript del dominio
-│   ├── App.tsx                        # Integración reactiva full-stack
-│   └── main.tsx                       # Punto de entrada de la UI
-├── server.ts                          # Servidor Express, puente Python y Gemini API
-├── package.json                       # Scripts y dependencias
-└── vite.config.ts                     # Configuración de compilación Vite
-```
+## Estados de pago
 
-### 1. 🚨 Centro de Eventos Críticos (`CriticalEventsView`)
-- Visualización en **tarjetas paralelas divididas**:
-  - **Columna Izquierda (Área Comercial):** Verificación del comprobante contra cartola bancaria. Permite marcar como `Confirmado` u `Observado / no confirmado`.
-  - **Columna Derecha (Área Judicial):** Alerta prioritaria con SLA de 4 horas para frenar diligencias de incautación de vehículos o embargos.
-- **Salvaguarda Cobgestion:** Si Comercial marca el pago como confirmado, el evento **permanece abierto** con advertencia visual hasta que Judicial registra la suspensión formal en tribunales.
+| Estado | Significado | Evento que dispara |
+|---|---|---|
+| **Informado / por confirmar** | Llegó el aviso o comprobante; falta verificarlo | EC-01: alerta judicial inmediata |
+| **Confirmado** | Verificado contra la cartola o la planilla del mandante | EC-03 si la causa sigue activa |
+| **Observado / no confirmado** | Diferencias o antecedentes pendientes | EC-02 |
 
-### 2. ⚖️ Módulo Judicial (`JudicialModule`)
-- Radar de causas judiciales clasificadas por riesgo procesal:
-  - *Orden de incautación vigente* (Vehículos con alto riesgo de pérdida de $600.000 CLP).
-  - *Diligencia con receptor programada*.
-  - *Mandamiento de embargo*.
-  - *Suspendidos preventivos* (Casos salvados oportunamente).
-- **Generador de Escrito OJV en 1 Clic:** Redacta automáticamente el escrito legal chileno (*"SE TENGA PRESENTE COMPROBANTE DE PAGO Y SE SUSPENDA DILIGENCIA DE INCAUTACIÓN / EMBARGO"*) con los datos de la causa, tribunal, receptor, deudor y patente del vehículo, listo para copiar y presentar en la Oficina Judicial Virtual.
+## Licencia
 
-### 3. 💼 Módulo Comercial (`CommercialModule`)
-- Bandeja de entrada de comprobantes recibidos (`Avisos_Pago`).
-- Filtros por estado: `Por Confirmar`, `Confirmados` y `Observados`.
-- Inspección de datos extraídos (Banco emisor, N° transacción, titular, monto CLP y porcentaje de confianza IA).
-
-### 4. 🔍 Ingesta de Datos No Estructurados con IA (`UnstructuredIngestionModal`)
-- Resuelve la recepción caótica de antecedentes (pantallazos de WhatsApp, transferencias móviles, fotos de depósitos en caja vecina o correos de bancos).
-- Utiliza **Gemini 3.8 Flash** vía `/api/gemini/extract-receipt` para transformar texto o imágenes no estructuradas en datos limpios:
-  - Monto exacto (CLP)
-  - Banco de origen y destino
-  - Número de operación / comprobante
-  - RUT y nombre del depositante
-- Cuenta con **4 casos chilenos reales precargados** para pruebas inmediatas con un solo clic (incluyendo el caso del automóvil Suzuki Swift patente BB-CL-44).
-
-### 5. 📊 Planillas de Mandantes (`MandanteReconcileView`)
-- Gestión de liquidaciones estructuradas enviadas periódicamente por bancos y financieras (Santander, Forum, Scotiabank, CMR).
-- **Conciliación masiva:** Cruza automáticamente los códigos de operación y RUT contra los avisos informados, detectando discrepancias de monto al instante.
-
-### 6. 🐍 Motor Python & Terminal (`PythonEngineConsole`)
-- Consola web interactiva con acceso a la CLI de Python.
-- Permite ejecutar `python3 python_engine/test_cobgestion.py` desde el navegador y ver la salida estándar en vivo.
-- Visor de código fuente de los módulos Python desarrollados para Cobgestion.
-- Botón de exportación a las 6 hojas de cálculo en formato CSV compatible con Microsoft Excel.
-
-### 7. 📈 Dashboard de Trazabilidad (`TraceabilityDashboard`)
-- Métricas del proyecto Capstone:
-  - **Pérdidas Prevenidas:** Contador en tiempo real del dinero ahorrado en costas indebidas ($600.000 CLP por cada incautación suspendida a tiempo).
-  - **Tasa de Cumplimiento de SLA Judicial:** Medición del tiempo de reacción de los abogados frente a comprobantes recibidos.
-  - **Historial Inmutable:** Auditoría con fecha, hora, usuario, área, acción ejecutada y detalle de cada decisión tomada en el sistema.
-
----
-
-## 📋 Estados de Pago Definidos
-
-| Estado | Significado | ¿Genera Alerta Judicial? |
-| :--- | :--- | :--- |
-| **Informado / por confirmar** | Se recibió el comprobante o aviso, pendiente de verificar contra la cartola. | **Sí, de forma inmediata**, para que Judicial revise el caso y suspenda apremios si corresponde. |
-| **Confirmado** | El pago fue verificado y conciliado contra la fuente o liquidación del mandante. | **Sí**, para actualizar las tareas y registrar el avance hacia el cierre coordinado. |
-| **Observado / no confirmado** | Existen diferencias en el monto, comprobante ilegible o antecedentes pendientes. | **Sí**, para requerir revisión a Comercial y evaluar el curso de la causa en Judicial. |
-
----
-
-## 📄 Licencia
-
-Desarrollado bajo licencia Apache-2.0 para **Cobgestion LegalTech SpA**.
+Apache-2.0.
