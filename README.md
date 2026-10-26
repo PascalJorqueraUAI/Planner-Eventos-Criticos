@@ -161,7 +161,6 @@ La respuesta incluye `deteccion.eventos_nuevos` con el evento EC-04 ya creado y 
 ```bash
 git clone <URL_DEL_REPOSITORIO>
 cd Planner-Eventos-Criticos
-git checkout refactor/cuatro-modulos-mvc   # mientras no esté fusionada en main
 npm install
 ```
 
