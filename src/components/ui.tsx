@@ -1,8 +1,16 @@
 import React from 'react';
 import { AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
-import type { Prioridad } from '../domain/types.js';
+import type { PartidaRiesgo, Prioridad } from '../domain/types.js';
 
 export const clp = (n: number) => `$${Math.round(n).toLocaleString('es-CL')}`;
+
+/** Desglose del riesgo estimado de un evento: qué costas asumiría Cobgestion si el apremio sigue. */
+export const DesgloseRiesgo: React.FC<{ partidas?: PartidaRiesgo[] }> = ({ partidas }) =>
+  partidas?.length ? (
+    <p className="text-red-300/80">
+      Riesgo estimado: {partidas.map((p) => `${p.concepto} ${clp(p.monto)}`).join(' · ')}
+    </p>
+  ) : null;
 
 export const fecha = (iso: string | null | undefined) =>
   iso

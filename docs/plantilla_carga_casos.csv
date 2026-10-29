@@ -1,0 +1,3 @@
+id;rol_causa;tribunal;deudor_nombre;deudor_rut;deudor_email;deudor_telefono;mandante;monto_deuda;bien_tipo;bien_descripcion;bien_patente;estado_comercial;estado_judicial;responsable_comercial;responsable_judicial;fecha_diligencia
+;C-9001-2026;15° Juzgado Civil de Santiago;Deudor Ficticio Uno;14.555.666-K;deudor1@ejemplo.cl;+56 9 1111 1111;Banco de Ejemplo;3500000;Vehículo;Automóvil de ejemplo 2020;AB-CD-12;En negociación;Orden de incautación vigente;Ignacio Rivas;Abg. Valentina Tapia;30-10-2026 10:00
+;C-9002-2026;2° Juzgado Civil de Valparaíso;Comercial Ficticia SpA;76.345.120-8;pagos@ficticia.cl;+56 32 222 2222;Financiera de Ejemplo;8200000;Inmueble;Bodega de ejemplo;;Acuerdo vigente;Notificado;COL-0003;COL-0007;

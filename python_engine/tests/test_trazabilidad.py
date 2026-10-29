@@ -1,7 +1,6 @@
 import unittest
 
 from controlador.trazabilidad import calcular_metricas
-from modelo.entidades import COSTO_INCAUTACION_INDEBIDA_CLP
 from tests.utilidades import Reloj, servicio_de_prueba, tareas_del_caso
 
 
@@ -39,11 +38,11 @@ class TestConciliacionYMetricas(unittest.TestCase):
         self.assertIsNone(m["cumplimiento_sla_pct"])
 
     def test_riesgo_cubierto_cuando_judicial_actua_a_tiempo(self):
-        _, tareas = tareas_del_caso(self.servicio, "CASO-1052", "EC-01")
+        evento, tareas = tareas_del_caso(self.servicio, "CASO-1052", "EC-01")
         self.reloj.avanzar(hours=1)
         self.servicio.atender_tarea(tareas["Judicial"]["id"], "Diligencia suspendida preventivamente", "", "Judicial")
         m = calcular_metricas(self.repo, self.reloj())
-        self.assertEqual(m["riesgo_cubierto_clp"], COSTO_INCAUTACION_INDEBIDA_CLP)
+        self.assertEqual(m["riesgo_cubierto_clp"], evento["riesgo_clp"])
         self.assertEqual(m["cumplimiento_sla_pct"], 100)
 
     def test_desfase_aviso_alerta_es_cero_para_comprobantes_nuevos(self):

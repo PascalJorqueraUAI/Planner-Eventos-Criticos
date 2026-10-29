@@ -11,3 +11,4 @@ __pycache__/
 python_engine/data_store.json
 python_engine/data_store.json.tmp
 exports/
+evidencia/

@@ -1,7 +1,6 @@
 import unittest
 
 from controlador import detector
-from modelo.entidades import COSTO_INCAUTACION_INDEBIDA_CLP
 from tests.utilidades import AHORA, servicio_de_prueba, tareas_del_caso
 
 
@@ -30,13 +29,15 @@ class TestDetectorEventosCriticos(unittest.TestCase):
     def test_causa_con_apremio_es_critica_con_sla_de_4_horas(self):
         evento, tareas = tareas_del_caso(self.servicio, "CASO-1052", "EC-01")
         self.assertEqual(evento["prioridad"], "CRITICA")
-        self.assertEqual(evento["riesgo_clp"], COSTO_INCAUTACION_INDEBIDA_CLP)
+        self.assertGreater(evento["riesgo_clp"], 0)
+        self.assertEqual(evento["riesgo_clp"], sum(p["monto"] for p in evento["riesgo_detalle"]))
         self.assertEqual(tareas["Judicial"]["sla_horas"], 4)
 
     def test_causa_sin_apremio_no_es_critica(self):
         evento, _ = tareas_del_caso(self.servicio, "CASO-1053", "EC-02")
         self.assertEqual(evento["prioridad"], "ALTA")
         self.assertEqual(evento["riesgo_clp"], 0)
+        self.assertEqual(evento["riesgo_detalle"], [])
 
     def test_escanear_de_nuevo_no_duplica_eventos(self):
         antes = len(self.repo.listar("eventos"))

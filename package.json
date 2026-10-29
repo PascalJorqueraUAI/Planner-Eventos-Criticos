@@ -12,7 +12,9 @@
     "lint": "tsc --noEmit",
     "test": "npm run test:py",
     "test:py": "node scripts/python.mjs -m unittest discover -s python_engine/tests -t python_engine -v",
-    "test:gemini": "node scripts/python.mjs python_engine/tests/integracion_gemini.py"
+    "test:gemini": "node scripts/python.mjs python_engine/tests/integracion_gemini.py",
+    "evidencia": "node scripts/python.mjs python_engine/evidencia.py",
+    "importar": "node scripts/python.mjs python_engine/importar_casos.py"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

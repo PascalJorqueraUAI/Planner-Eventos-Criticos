@@ -88,5 +88,8 @@ def calcular_metricas(repo: Repositorio, ahora: datetime) -> Dict[str, Any]:
         "riesgo_cubierto_clp": riesgo_cubierto,
         "tareas_escaladas": sum(1 for t in pendientes if t.get("asignacion", {}).get("escalada")),
         "tareas_escaladas_por_vencimiento": sum(1 for t in tareas if t.get("nivel_escalamiento", 0) > 0),
+        # Señal de saturación: tareas que exceden la capacidad declarada de cada persona
+        # (solo puede ocurrir en jefatura, que recibe lo escalado cuando el equipo no da abasto).
+        "tareas_sobre_capacidad": sum(max(0, c["carga"] - c["capacidad"]) for c in colaboradores),
         "colaboradores": colaboradores,
     }

@@ -33,6 +33,10 @@ def ejecutar(servicio: Servicio, comando: str, datos: dict):
         "actualizar-caso": lambda: servicio.actualizar_caso(datos["caso_id"], datos["cambios"], usuario),
         "ingresar-aviso": lambda: servicio.ingresar_aviso(datos["aviso"], usuario),
         "conciliar-planilla": lambda: servicio.conciliar_planilla(datos["registros"], usuario),
+        "crear-caso": lambda: servicio.crear_caso(datos["caso"], datos.get("comprobante"), usuario),
+        "importar-casos": lambda: servicio.importar_casos(
+            datos["csv"], datos.get("mapeo"), bool(datos.get("solo_validar")), datos.get("usuario") or "Importación de casos"
+        ),
         "atender-tarea": lambda: servicio.atender_tarea(datos["tarea_id"], datos["resultado"], datos.get("notas", ""), usuario),
         "reasignar-tarea": lambda: servicio.reasignar_tarea(datos["tarea_id"], datos.get("motivo", ""), usuario),
         "disponibilidad": lambda: servicio.cambiar_disponibilidad(
@@ -44,7 +48,7 @@ def ejecutar(servicio: Servicio, comando: str, datos: dict):
         "extraer-comprobante": lambda: servicio.extraer_comprobante(datos, usuario),
         "registrar-tratamiento": lambda: servicio.registrar_tratamiento(datos["tratamiento"]),
         "exportar": lambda: servicio.exportar(DIRECTORIO_EXPORTACION),
-        "reiniciar": lambda: servicio.reiniciar(),
+        "reiniciar": lambda: servicio.reiniciar(datos.get("escenario")),
     }
     if comando not in comandos:
         raise ValueError(f"Comando desconocido: {comando}. Opciones: {', '.join(comandos)}")

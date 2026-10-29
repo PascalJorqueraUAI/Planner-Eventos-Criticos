@@ -54,7 +54,7 @@ def escanear(repo: Repositorio, ahora: datetime, usuario: str = "Detector de eve
 
 
 def _crear_evento(repo: Repositorio, regla: ReglaEvento, ctx: Contexto, clave: str, usuario: str) -> Dict[str, Any]:
-    prioridad, riesgo = prioridad_y_riesgo(regla, ctx)
+    prioridad, riesgo, riesgo_detalle = prioridad_y_riesgo(regla, ctx)
     motivo = f"Regla {regla.codigo}: {regla.condicion}."
     if prioridad == "CRITICA":
         motivo += f" Causa con apremio en curso ({ctx.caso['estado_judicial']}): prioridad CRÍTICA."
@@ -70,6 +70,7 @@ def _crear_evento(repo: Repositorio, regla: ReglaEvento, ctx: Contexto, clave: s
         clave=clave,
         fecha_deteccion=a_iso(ctx.ahora),
         riesgo_clp=riesgo,
+        riesgo_detalle=riesgo_detalle,
     ))
     repo.registrar_historial(
         usuario=usuario,

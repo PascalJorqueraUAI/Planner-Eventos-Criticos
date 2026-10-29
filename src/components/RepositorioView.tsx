@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { Database, FileSpreadsheet, Upload, Download, History, RefreshCw, Car } from 'lucide-react';
+import { Database, FileSpreadsheet, Upload, Download, History, RefreshCw, Car, FilePlus2 } from 'lucide-react';
 import { api, type Ejecutar } from '../api.js';
 import type { EstadoSistema } from '../domain/types.js';
 import { IngresoComprobanteModal } from './IngresoComprobanteModal.js';
+import { NuevoCasoModal } from './NuevoCasoModal.js';
 import { Boton, Etiqueta, Tarjeta, TituloSeccion, campo, clp, fecha, relativo, tonoEstadoPago } from './ui.js';
 
 /** Planilla quincenal de ejemplo enviada por los mandantes (dato estructurado). */
@@ -16,11 +17,13 @@ const PLANILLA_EJEMPLO = [
 interface Props {
   estado: EstadoSistema;
   ejecutar: Ejecutar;
+  irAAsignacion: () => void;
 }
 
-export const RepositorioView: React.FC<Props> = ({ estado, ejecutar }) => {
+export const RepositorioView: React.FC<Props> = ({ estado, ejecutar, irAAsignacion }) => {
   const [seleccionado, setSeleccionado] = useState<string>(estado.casos[0]?.id);
   const [modalAbierto, setModalAbierto] = useState(false);
+  const [nuevoCasoAbierto, setNuevoCasoAbierto] = useState(false);
   const [planillaAbierta, setPlanillaAbierta] = useState(false);
   const [resultadoPlanilla, setResultadoPlanilla] = useState<any>(null);
 
@@ -50,6 +53,9 @@ export const RepositorioView: React.FC<Props> = ({ estado, ejecutar }) => {
           subtitulo="Planilla única con el estado actual de cada caso, sus últimas actualizaciones y el historial de cambios. Se alimenta del CRM, de los comprobantes y de las planillas de mandantes."
           acciones={
             <>
+              <Boton variante="primario" onClick={() => setNuevoCasoAbierto(true)}>
+                <FilePlus2 className="w-4 h-4" /> Nuevo caso
+              </Boton>
               <Boton variante="primario" onClick={() => setModalAbierto(true)}>
                 <Upload className="w-4 h-4" /> Registrar comprobante
               </Boton>
@@ -171,6 +177,14 @@ export const RepositorioView: React.FC<Props> = ({ estado, ejecutar }) => {
       </Tarjeta>
 
       {caso && <DetalleCaso key={caso.id} estado={estado} casoId={caso.id} nombre={nombre} ejecutar={ejecutar} />}
+
+      <NuevoCasoModal
+        estado={estado}
+        abierto={nuevoCasoAbierto}
+        onCerrar={() => setNuevoCasoAbierto(false)}
+        ejecutar={ejecutar}
+        irAAsignacion={irAAsignacion}
+      />
 
       <IngresoComprobanteModal
         casos={estado.casos}

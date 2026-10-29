@@ -20,6 +20,8 @@ export const api = {
   escanear: () => solicitar<any>('POST', '/detector/escanear'),
   actualizarCaso: (id: string, cambios: Record<string, unknown>, usuario: string) =>
     solicitar<any>('PATCH', `/casos/${id}`, { cambios, usuario }),
+  crearCaso: (caso: Record<string, string>, comprobante: { monto: number; canal: string } | null) =>
+    solicitar<any>('POST', '/casos', { caso, comprobante }),
   ingresarAviso: (aviso: Record<string, unknown>, usuario: string) => solicitar<any>('POST', '/avisos', { aviso, usuario }),
   conciliarPlanilla: (registros: Record<string, unknown>[], usuario: string) =>
     solicitar<any>('POST', '/planillas-mandante', { registros, usuario }),
@@ -33,5 +35,5 @@ export const api = {
   registrarAusencia: (id: string, desde: string, hasta: string, motivo: string) =>
     solicitar<any>('POST', `/colaboradores/${id}/ausencias`, { desde, hasta, motivo }),
   exportar: () => solicitar<{ archivos: string[] }>('POST', '/exportar'),
-  reiniciar: () => solicitar<any>('POST', '/reiniciar'),
+  reiniciar: (escenario?: string) => solicitar<any>('POST', '/reiniciar', { escenario }),
 };

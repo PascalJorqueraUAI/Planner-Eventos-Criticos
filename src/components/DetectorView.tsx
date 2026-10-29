@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Radar, BookOpen, Play, Lock } from 'lucide-react';
 import { api, type Ejecutar } from '../api.js';
 import type { EstadoSistema } from '../domain/types.js';
-import { BadgeEstadoTarea, BadgePrioridad, Boton, Etiqueta, Tarjeta, TituloSeccion, clp, fecha, relativo } from './ui.js';
+import { BadgeEstadoTarea, BadgePrioridad, Boton, DesgloseRiesgo, Etiqueta, Tarjeta, TituloSeccion, clp, fecha, relativo } from './ui.js';
 
 interface Props {
   estado: EstadoSistema;
@@ -76,6 +76,7 @@ export const DetectorView: React.FC<Props> = ({ estado, ejecutar, irATareas }) =
                   {e.riesgo_clp > 0 && <span className="text-red-300"> · riesgo {clp(e.riesgo_clp)}</span>}
                 </p>
                 <p className="text-slate-500">{e.motivo}</p>
+                <DesgloseRiesgo partidas={e.riesgo_detalle} />
                 <ul className="space-y-1">
                   {tareas.map((t) => (
                     <li key={t.id} className="flex flex-wrap items-center gap-2 bg-slate-900/80 rounded-lg px-2 py-1.5">
