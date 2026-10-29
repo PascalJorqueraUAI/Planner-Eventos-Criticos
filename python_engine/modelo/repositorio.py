@@ -16,7 +16,8 @@ from typing import Any, Dict, List, Optional
 
 from modelo.entidades import RegistroHistorial, a_iso
 
-RUTA_DATOS = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data_store.json")
+# COBGESTION_DATA_STORE permite usar otro archivo (por ejemplo, una demo aparte sin tocar la principal).
+RUTA_DATOS = os.environ.get("COBGESTION_DATA_STORE") or os.path.join(os.path.dirname(os.path.dirname(__file__)), "data_store.json")
 
 COLECCIONES = (
     "casos",

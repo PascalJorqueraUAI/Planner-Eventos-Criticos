@@ -20,11 +20,15 @@ class Reloj:
         self.momento += timedelta(**kw)
 
 
-def servicio_de_prueba(reloj: Reloj = None) -> Servicio:
-    """Servicio con los datos del sandbox ya cargados y el primer escaneo ejecutado."""
+def servicio_de_prueba(reloj: Reloj = None, escenario: str = "base") -> Servicio:
+    """
+    Servicio con los datos del sandbox ya cargados y el primer escaneo ejecutado.
+    Por defecto usa el escenario "base" (6 casos, 8 colaboradores), sobre el que están
+    escritas las pruebas originales; test_escenario_ampliado.py usa el "ampliado".
+    """
     # Gemini desactivado: las pruebas nunca dependen de variables de entorno ni de la red.
     sin_gemini = ConfigExtraccion(api_key="", modelo="sin-modelo", autorizado=False)
-    return Servicio(Repositorio(ruta=None), reloj=reloj or Reloj(), config_extraccion=sin_gemini)
+    return Servicio(Repositorio(ruta=None), reloj=reloj or Reloj(), config_extraccion=sin_gemini, escenario=escenario)
 
 
 def tareas_del_caso(servicio: Servicio, caso_id: str, codigo: str):

@@ -15,8 +15,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from controlador.riesgo import estimar_riesgo
 from modelo.entidades import (
-    COSTO_INCAUTACION_INDEBIDA_CLP,
     ESTADOS_JUDICIALES_APREMIO,
     ESTADOS_JUDICIALES_CERRADOS,
     desde_iso,
@@ -79,11 +79,11 @@ class ReglaEvento:
     prioridad_base: str = "ALTA"
 
 
-def prioridad_y_riesgo(regla: ReglaEvento, ctx: Contexto) -> Tuple[str, int]:
-    """Una causa con apremio en curso eleva el evento a CRÍTICO: hay costas en juego."""
+def prioridad_y_riesgo(regla: ReglaEvento, ctx: Contexto) -> Tuple[str, int, List[Dict[str, Any]]]:
+    """Una causa con apremio en curso eleva el evento a CRÍTICO: hay costas en juego, estimadas según el caso."""
     if ctx.en_apremio:
-        return "CRITICA", COSTO_INCAUTACION_INDEBIDA_CLP
-    return regla.prioridad_base, 0
+        return ("CRITICA", *estimar_riesgo(ctx.caso))
+    return regla.prioridad_base, 0, []
 
 
 def _clave_aviso(codigo: str) -> Callable[[Contexto], str]:

@@ -3,6 +3,7 @@
 Prototipo para **Cobgestion**, empresa LegalTech de cobranza judicial y extrajudicial, que reduce los desfases de información entre el **Área Comercial** (análisis de datos y gestión de cobranza) y el **Área Judicial** (gestión de causas y recuperación de acreencias).
 
 > **¿Primera vez?** Ve directo a la [Guía para el equipo](#guía-para-el-equipo-correr-el-sistema).
+> **¿Vas a instalarlo en Cobgestion?** Sigue [docs/puesta_en_marcha.md](docs/puesta_en_marcha.md).
 
 ## Problema
 
@@ -31,7 +32,17 @@ Cobgestion trabaja con un sistema híbrido de CRM y planillas. Los pagos quedan 
 | EC-04 | Diligencia inminente con negociación abierta | Apremio en curso, diligencia en ≤ 72 h y negociación vigente | Judicial confirma o reprograma con el receptor · Comercial contacta al deudor |
 | EC-05 | Convenio incumplido con causa suspendida | Convenio incumplido y causa suspendida | Judicial evalúa reactivar · Comercial intenta repactar |
 
-Si la causa tiene un **apremio en curso** (embargo, orden de incautación o receptor programado), el evento sube a **CRÍTICO**, se marca un riesgo de $600.000 y el SLA judicial baja a **4 horas**. Desde el estado *informado* se alerta a Judicial: no se espera la conciliación.
+Si la causa tiene un **apremio en curso** (embargo, orden de incautación o receptor programado), el evento sube a **CRÍTICO** y el SLA judicial baja a **4 horas**. Desde el estado *informado* se alerta a Judicial: no se espera la conciliación.
+
+**Riesgo de cada evento.** Es lo que Cobgestion asumiría si el apremio sigue sin que Judicial actúe. Se estima con el contexto del caso ([riesgo.py](python_engine/controlador/riesgo.py)) y la interfaz muestra el desglose:
+
+| Contexto | Qué suma |
+|---|---|
+| Orden de incautación o diligencia con receptor sobre un bien que se retira | Receptor + retiro (grúa, grúa cama baja para camiones y maquinaria, flete para muebles) + 15 días de custodia + devolución |
+| Mandamiento de embargo, o inmueble | Receptor + anotación y alzamiento en el RVM (vehículos) o el CBR (inmuebles) |
+| Siempre | Costas personales: 3 % de la deuda (mínimo $50.000, máximo $600.000) |
+
+> ⚠️ Las tarifas son **supuestos de la demo**, calibrados para que el caso del auto (CASO-1052) dé ≈ $600.000, el costo real de la incautación. Antes de presentar cifras como reales, reemplázalas por los costos efectivos de Cobgestion: están todas al inicio de `riesgo.py`.
 
 **Cierre coordinado:** un evento solo se cierra cuando **todas** sus tareas están atendidas. Que Comercial confirme el pago no cierra el evento si Judicial aún no suspendió la diligencia.
 
@@ -107,12 +118,16 @@ python_engine/
 │   ├── detector.py            Detector de eventos (idempotente)
 │   ├── asignador.py           Matriz RACI + método húngaro
 │   ├── seguimiento.py         Atender, cierre coordinado, calendario de ausencias, escalamiento
+│   ├── importador.py          Carga de casos desde CSV del CRM o planillas, con validación
 │   ├── conciliador.py         Planillas estructuradas de mandantes
 │   ├── extraccion.py          Extracción local + Gemini con seudonimización y registro de tratamientos
 │   ├── trazabilidad.py        Métricas del dashboard
 │   └── servicio.py            Casos de uso; cada cambio dispara un ciclo de detección
 ├── tests/                     Pruebas unitarias por componente (unittest)
-└── cli.py                     Punto de entrada: comando + JSON por stdin → JSON por stdout
+├── cli.py                     Punto de entrada: comando + JSON por stdin → JSON por stdout
+├── evidencia.py               Paquete de evidencia: detección, recorrido, simulación y pruebas
+└── importar_casos.py          Carga de casos desde un CSV por línea de comandos
+docs/                          Guía de puesta en marcha, plantilla de carga y mapeo de columnas
 server.ts                      API REST /api/v1 (Express)
 src/                           VISTA: React + Tailwind (una vista por módulo)
 ```
@@ -123,9 +138,11 @@ src/                           VISTA: React + Tailwind (una vista por módulo)
 |---|---|---|
 | GET | `/api/v1/estado` | Estado completo para la Vista |
 | GET | `/api/v1/casos`, `/api/v1/casos/:id` | Casos (con avisos, eventos, tareas e historial) |
+| POST | `/api/v1/casos` | `{ caso, comprobante? }`: crea un caso con las mismas validaciones del importador, y opcionalmente su primer comprobante. Responde con los eventos detectados y la asignación de cada tarea |
 | PATCH | `/api/v1/casos/:id` | **El CRM informa un cambio en un caso** (estado comercial/judicial, fecha de diligencia, titulares) |
 | POST | `/api/v1/avisos` | Comprobante no estructurado ya extraído; se asocia por `caso_id` o por RUT |
 | POST | `/api/v1/planillas-mandante` | Planilla estructurada de un mandante |
+| POST | `/api/v1/importar-casos` | `{ csv, mapeo?, solo_validar? }`: carga casos desde una exportación del CRM o una planilla (ver [Importación de casos](#importación-de-casos-desde-el-crm-o-una-planilla)) |
 | POST | `/api/v1/extraer-comprobante` | `{ texto, imagen_base64?, confirmacion_operador? }`: prellena monto, RUT y N° de operación (local o Gemini, con los resguardos descritos) |
 | GET / POST | `/api/v1/eventos`, `/api/v1/detector/escanear` | Eventos y escaneo manual |
 | GET | `/api/v1/tareas` | Tareas con indicador de vencimiento |
@@ -197,19 +214,27 @@ En Windows, ejecuta los comandos desde **PowerShell** o la terminal de VS Code, 
 ### 5. Recorrido sugerido para la demo
 
 1. **Repositorio:** abre CASO-1052 (el auto Suzuki) y revisa su historial de cambios.
-2. **Detector:** hay 5 eventos detectados al cargar el sandbox. EC-01 es el comprobante del auto, con prioridad crítica y SLA judicial de 4 h.
+2. **Detector:** hay 16 eventos detectados al cargar el sandbox ampliado (24 casos, 14 colaboradores). EC-01 del CASO-1052 es el comprobante del auto, con prioridad crítica y SLA judicial de 4 h.
 3. **Asignación:** en "¿Por qué esta persona?" se ve que Camila, titular del caso, quedó excluida por su permiso en el calendario. Programa una ausencia a otro colaborador y mira cómo se reasignan sus tareas.
 4. **Cierre coordinado:** marca como atendida la tarea comercial ("Pago confirmado"). El evento sigue abierto hasta que Judicial atienda la suya.
-5. **Repositorio → Registrar comprobante:** registra el correo del camión KR-WP-19. El detector crea el evento en el acto.
-6. **Gemini (si está habilitado):** en *Registrar comprobante → Imagen*, sube `python_engine/tests/fixtures/comprobante_ficticio.png`, confirma el envío y presiona *Extraer datos*. Se prellenan monto, RUT y N° de operación. Con el ejemplo "WhatsApp sin N° de operación", despliega "Ver exactamente qué texto salió hacia Gemini" para mostrar la seudonimización (`[RUT_1]`, `[CORREO_1]`…).
-7. **Trazabilidad:** métricas, carga por colaborador, auditoría y el registro de tratamientos, donde queda cada envío a Gemini.
+5. **Repositorio → Nuevo caso:** elige el ejemplo "Auto con incautación + comprobante" y presiona *Crear caso y ejecutar detector*. El formulario muestra en el acto:
+   - el evento detectado (EC-01 crítico);
+   - a quién se asignó cada tarea y con qué puntaje;
+   - los demás candidatos;
+   - por qué se excluyó a cada colaborador (permiso, licencia, sin capacidad).
+
+   Con "Caso sin riesgo (control)" se ve que no todo caso genera alertas. Si eliges como titular a alguien marcado "(no disponible)", el sistema asigna la tarea a otra persona.
+6. **Repositorio → Registrar comprobante:** registra el correo del camión KR-WP-19. El detector crea el evento en el acto.
+7. **Gemini (si está habilitado):** en *Registrar comprobante → Imagen*, sube `python_engine/tests/fixtures/comprobante_ficticio.png`, confirma el envío y presiona *Extraer datos*. Se prellenan monto, RUT y N° de operación. Con el ejemplo "WhatsApp sin N° de operación", despliega "Ver exactamente qué texto salió hacia Gemini" para mostrar la seudonimización (`[RUT_1]`, `[CORREO_1]`…).
+8. **Trazabilidad:** métricas, carga por colaborador, auditoría y el registro de tratamientos, donde queda cada envío a Gemini.
 
 ### 6. Pruebas
 
 | Comando | Qué hace | Red |
 |---|---|---|
-| `npm test` | Pruebas unitarias del motor Python (detector, asignación, seguimiento, extracción, privacidad) | No |
+| `npm test` | Pruebas unitarias del motor Python (detector, riesgo, asignación, seguimiento, ingreso e importación de casos, extracción, privacidad, evidencia) | No |
 | `npm run lint` | Chequeo de tipos de la Vista y la API | No |
+| `npm run evidencia` | Genera `evidencia/<fecha>/` con el resumen para la presentación: detección caso por caso, recorrido de la demo, simulación de una semana, pruebas y exportaciones CSV (ver [Paquete de evidencia](#paquete-de-evidencia)) | No |
 | `npm run test:gemini` | Integración **real** con Gemini usando solo datos ficticios (texto y `tests/fixtures/comprobante_ficticio.png`). Se omite si no hay clave o si la cuota está agotada. | Sí, gasta 2 de las 20 solicitudes diarias |
 
 ### 7. Uso del motor sin la interfaz
@@ -219,6 +244,8 @@ py -3 python_engine/cli.py estado       # macOS/Linux: python3 python_engine/cli
 py -3 python_engine/cli.py escanear
 py -3 python_engine/cli.py exportar     # CSV para Excel en ./exports
 py -3 python_engine/cli.py reiniciar
+py -3 python_engine/evidencia.py       # paquete de evidencia (--dias N, --sin-pruebas, --salida carpeta)
+py -3 python_engine/importar_casos.py casos.csv --validar
 ```
 
 ### Problemas frecuentes
@@ -228,11 +255,61 @@ py -3 python_engine/cli.py reiniciar
 | `spawn py ENOENT` o "no se encontró py" | En Windows, Git Bash no ve el lanzador `py`. Usa PowerShell. Si tampoco funciona ahí, instala Python desde python.org marcando "py launcher". |
 | `EADDRINUSE ... 3000` | Ya hay otra instancia corriendo. Ciérrala (Ctrl+C en su terminal) o cambia `PORT` en el `.env`. |
 | La interfaz falla tras actualizar el código | El `data_store.json` quedó con un formato anterior. Presiona **Reiniciar sandbox** o borra `python_engine/data_store.json`. |
+| Todos los eventos críticos muestran un riesgo de $600.000 | Son eventos detectados antes de que el riesgo se calculara según cada caso, y no se recalculan solos. Reinicia `npm run dev` y presiona **Reiniciar sandbox**. |
 | La interfaz dice "falta GEMINI_TRATAMIENTO_AUTORIZADO=si" aunque ya lo pusiste | El servidor se inició antes del cambio. Reinicia `npm run dev`. |
 | `npm run test:gemini` dice "skipped" | Sin clave: no hay clave en el `.env` o no se guardó. Con el motivo "cuota … agotada": se acabaron las 20 solicitudes diarias del plan gratuito (ver el punto siguiente). |
 | "cuota diaria del plan gratuito de Gemini agotada" | Espera el tiempo indicado, usa la clave de otro integrante o cambia a otro modelo, que tiene cuota propia (por ejemplo `GEMINI_MODEL="gemini-3.5-flash-lite"`). Mientras tanto, el registro sigue funcionando con la extracción local. |
 | La extracción tarda o dice "503" | Alta demanda en Google. El sistema reintenta solo y, si no lo logra, usa la extracción local. Completa a mano lo que falte. |
 | `npm run test:gemini` falla con HTTP 404 en el modelo | El modelo de `GEMINI_MODEL` no está disponible para tu clave: revisa los nombres vigentes en la [documentación de modelos](https://ai.google.dev/gemini-api/docs/models). Si el modelo no admite `GEMINI_THINKING_LEVEL="minimal"`, el sistema reintenta sin ese parámetro. |
+
+## Sandbox: escenarios de prueba
+
+Todos los datos del sandbox son ficticios.
+
+| Escenario | Contenido | Cómo usarlo |
+|---|---|---|
+| `ampliado` (por defecto) | 24 casos y 14 colaboradores. Cubre los 5 eventos del catálogo con y sin apremio, 8 casos que **no** deben generar eventos, una licencia médica vigente, una capacitación programada y colaboradores nuevos con poco historial | Selector **Escenario** del encabezado → **Reiniciar sandbox** |
+| `base` | Los 6 casos y 8 colaboradores originales de la demo | El mismo selector, `SANDBOX_ESCENARIO=base` en el `.env` o `{"escenario": "base"}` en `POST /api/v1/reiniciar` |
+
+El sandbox se carga **solo cuando no hay datos** (`python_engine/data_store.json` no existe). Si tus datos son de otro escenario que el configurado, por ejemplo porque se crearon antes de que existiera el ampliado, aparece un aviso azul en el encabezado con el botón **Cargar escenario «ampliado»**. No se recargan solos para no borrar lo que hiciste en la demo. Si eliges otro escenario a propósito con el selector, el aviso no aparece.
+
+Para tener una demo aparte sin tocar la principal, define `COBGESTION_DATA_STORE` con la ruta de otro archivo antes de `npm run dev`.
+
+Si el equipo no alcanza a cubrir todas las tareas nuevas, el asignador usa primero los cupos en las tareas críticas y escala a la jefatura las de menor prioridad. El dashboard lo informa en `tareas_sobre_capacidad`.
+
+## Paquete de evidencia
+
+```bash
+npm run evidencia
+```
+
+Genera `evidencia/<fecha_hora>/` (no se versiona) sobre un repositorio en memoria: no modifica `data_store.json` ni llama a Gemini. Tarda alrededor de un minuto.
+
+> **Qué cifras presentar.** Sirven como resultado las que no dependen del azar: la detección caso por caso, el 100% de tareas con responsable, que nadie con licencia reciba tareas y la alerta inmediata al registrar un comprobante. El **cumplimiento de SLA** y los **tiempos de atención** simulados salen de tiempos de respuesta ficticios: con 10 semillas, los eventos críticos atendidos a tiempo van de ~33% a ~81%. Preséntalos como algo que el sistema *permite medir*, no como un hallazgo sobre Cobgestion. Además, la alerta se mide desde que el comprobante **se registra**: un pantallazo de WhatsApp todavía requiere que alguien lo ingrese.
+
+| Archivo | Contenido |
+|---|---|
+| `README.md` | Cifras para la presentación y qué no demuestra el paquete |
+| `deteccion.md` | Escenario ampliado: eventos esperados frente a detectados, caso por caso, incluidos los controles negativos |
+| `recorrido_demo.md` | El caso del auto paso a paso: detección, asignación, cierre coordinado, comprobante nuevo, aviso del CRM, ausencia y vencimiento |
+| `simulacion.md` | Una semana simulada con avisos y cambios del CRM a cualquier hora, con sus supuestos y la misma semana repetida con 10 semillas aleatorias |
+| `metricas.json`, `pruebas.txt`, `exportaciones/` | Cifras en formato máquina, salida de las pruebas y hojas del repositorio en CSV |
+| `checklist_capturas.md` | Capturas de la interfaz que conviene sacar a mano |
+
+## Importación de casos desde el CRM o una planilla
+
+Mientras no exista una integración directa con el CRM, los casos se cargan desde un CSV (Excel → *Guardar como* → CSV).
+
+```bash
+npm run importar -- casos.csv --validar                       # revisa sin cambiar nada
+npm run importar -- casos.csv                                 # valida y carga
+npm run importar -- casos.csv --mapeo docs/mapeo_crm_ejemplo.json   # columnas con otros nombres
+```
+
+- Plantilla: [docs/plantilla_carga_casos.csv](docs/plantilla_carga_casos.csv). Mapeo de ejemplo: [docs/mapeo_crm_ejemplo.json](docs/mapeo_crm_ejemplo.json).
+- Valida cada fila: campos obligatorios, RUT con dígito verificador, montos, estados del catálogo (sin importar tildes ni mayúsculas), responsables existentes y de su área, fechas y duplicados. El reporte indica el motivo de cada fila rechazada.
+- Un caso nuevo se inserta. Uno existente (mismo id o rol de causa) se actualiza solo en los campos editables, y cada diferencia queda en el historial.
+- Al terminar se ejecuta el detector: los eventos de los casos cargados quedan creados y asignados.
 
 ## Estados de pago
 

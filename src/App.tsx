@@ -76,9 +76,9 @@ export default function App() {
     return () => clearTimeout(id);
   }, [aviso]);
 
-  const reiniciar = () => {
-    if (confirm('¿Recargar los datos del entorno de pruebas? Se perderán los cambios.')) {
-      ejecutar(() => api.reiniciar(), 'Sandbox reiniciado');
+  const reiniciar = (escenario: string) => {
+    if (confirm(`¿Recargar el sandbox con el escenario «${escenario}»? Se perderán los cambios hechos en la demo.`)) {
+      ejecutar(() => api.reiniciar(escenario), `Sandbox reiniciado (escenario ${escenario})`);
     }
   };
 
@@ -92,10 +92,12 @@ export default function App() {
 
   return (
     <div className="min-h-screen text-slate-100 flex flex-col">
-      <Header activo={modulo} onCambiar={setModulo} metricas={estado.metricas} onReiniciar={reiniciar} />
+      <Header activo={modulo} onCambiar={setModulo} metricas={estado.metricas} sandbox={estado.sandbox} onReiniciar={reiniciar} />
 
       <main className="flex-1 min-w-0 max-w-7xl w-full mx-auto px-3 py-4 sm:px-4 md:py-6">
-        {modulo === 'repositorio' && <RepositorioView estado={estado} ejecutar={ejecutar} />}
+        {modulo === 'repositorio' && (
+          <RepositorioView estado={estado} ejecutar={ejecutar} irAAsignacion={() => setModulo('asignacion')} />
+        )}
         {modulo === 'detector' && <DetectorView estado={estado} ejecutar={ejecutar} irATareas={() => setModulo('asignacion')} />}
         {modulo === 'asignacion' && <AsignacionView estado={estado} ejecutar={ejecutar} />}
         {modulo === 'dashboard' && <DashboardView estado={estado} />}

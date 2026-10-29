@@ -59,6 +59,7 @@ CARGOS = (
 )
 
 # Costo real asumido por Cobgestion en una incautación indebida (grúa, receptor, custodia y costas).
+# Es la referencia para calibrar las tarifas de controlador/riesgo.py, no el riesgo de cada evento.
 COSTO_INCAUTACION_INDEBIDA_CLP = 600000
 
 FORMATO_FECHA = "%Y-%m-%dT%H:%M:%S"
@@ -144,6 +145,7 @@ class EventoCritico:
     aviso_id: Optional[str] = None
     estado: str = "Abierto"
     riesgo_clp: int = 0
+    riesgo_detalle: List[Dict[str, Any]] = field(default_factory=list)   # partidas de la estimación (controlador/riesgo.py)
     fecha_cierre: Optional[str] = None
 
 

@@ -102,8 +102,33 @@ app.post(
   ruta((req) => motor('conciliar-planilla', { registros: req.body.registros, usuario: usuario(req, 'Planilla mandante') })),
 );
 
+// Un caso nuevo ingresado a mano (con comprobante inicial opcional): responde con sus eventos y asignaciones.
+app.post(
+  '/api/v1/casos',
+  ruta((req) =>
+    motor('crear-caso', {
+      caso: req.body.caso,
+      comprobante: req.body.comprobante ?? null,
+      usuario: usuario(req, 'Ingreso manual de casos'),
+    }),
+  ),
+);
+
+// Integración: carga de casos desde un CSV del CRM o de una planilla (con validación previa opcional).
+app.post(
+  '/api/v1/importar-casos',
+  ruta((req) =>
+    motor('importar-casos', {
+      csv: req.body.csv,
+      mapeo: req.body.mapeo,
+      solo_validar: Boolean(req.body.solo_validar),
+      usuario: usuario(req, 'Importación de casos'),
+    }),
+  ),
+);
+
 app.post('/api/v1/exportar', ruta(() => motor('exportar')));
-app.post('/api/v1/reiniciar', ruta(() => motor('reiniciar')));
+app.post('/api/v1/reiniciar', ruta((req) => motor('reiniciar', { escenario: req.body?.escenario })));
 
 // ---------------- Detector de eventos críticos ---------------- //
 app.get('/api/v1/eventos', ruta(async () => (await motor('estado')).eventos));

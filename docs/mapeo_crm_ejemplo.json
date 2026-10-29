@@ -1,0 +1,16 @@
+{
+  "_instrucciones": "A la izquierda, el campo del sistema; a la derecha, el nombre exacto de la columna en la exportación del CRM. Los campos que no se indican se buscan con su propio nombre. Las claves que empiezan con _ se ignoran.",
+  "rol_causa": "ROL",
+  "tribunal": "Tribunal",
+  "deudor_nombre": "Nombre Deudor",
+  "deudor_rut": "RUT Deudor",
+  "deudor_email": "Email",
+  "deudor_telefono": "Teléfono",
+  "mandante": "Mandante",
+  "monto_deuda": "Saldo Asignado",
+  "estado_comercial": "Estado Gestión",
+  "estado_judicial": "Etapa Judicial",
+  "responsable_comercial": "Ejecutivo",
+  "responsable_judicial": "Abogado",
+  "fecha_diligencia": "Fecha Diligencia"
+}

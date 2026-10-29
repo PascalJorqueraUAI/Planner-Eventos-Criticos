@@ -36,6 +36,11 @@ export interface AvisoPago {
   observaciones: string;
 }
 
+export interface PartidaRiesgo {
+  concepto: string;
+  monto: number;
+}
+
 export interface EventoCritico {
   id: string;
   codigo: string;
@@ -48,6 +53,8 @@ export interface EventoCritico {
   fecha_deteccion: string;
   estado: 'Abierto' | 'Cerrado';
   riesgo_clp: number;
+  /** Partidas de la estimación (python_engine/controlador/riesgo.py); vacío en eventos sin apremio. */
+  riesgo_detalle?: PartidaRiesgo[];
   fecha_cierre: string | null;
 }
 
@@ -205,6 +212,16 @@ export interface EstadoSistema {
   ultimo_escaneo: string | null;
   extraccion: ConfigExtraccion;
   tratamientos: RegistroTratamiento[];
+  sandbox: InfoSandbox;
+}
+
+export interface InfoSandbox {
+  escenario_cargado: string;
+  escenario_configurado: string;
+  escenarios: string[];
+  cargado_en: string | null;
+  /** Los datos guardados son de otro escenario que el configurado (y no se eligió a propósito). */
+  desactualizado: boolean;
 }
 
 export interface ConfigExtraccion {

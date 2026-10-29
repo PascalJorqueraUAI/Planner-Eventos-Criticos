@@ -7,17 +7,18 @@ las tareas que resulten. Así una actualización del CRM, un comprobante o una
 planilla de mandante generan sus alertas en el mismo instante.
 """
 
+import os
 from dataclasses import asdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from controlador import conciliador, detector, extraccion, seguimiento
+from controlador import conciliador, detector, extraccion, importador, seguimiento
 from controlador.asignador import MATRIZ_RACI, PESOS, asignar_lote, carga_actual, perfil_historico
 from controlador.catalogo_eventos import catalogo_serializado
 from controlador.conciliador import normalizar_rut
 from controlador.extraccion import ConfigExtraccion
 from controlador.trazabilidad import calcular_metricas
-from modelo.datos_iniciales import crear_datos_iniciales
+from modelo.datos_iniciales import ESCENARIO_POR_DEFECTO, ESCENARIOS, crear_datos_iniciales
 from modelo.entidades import (
     ESTADOS_COMERCIALES,
     ESTADOS_JUDICIALES,
@@ -31,9 +32,11 @@ CAMPOS_CASO_EDITABLES = ("estado_comercial", "estado_judicial", "fecha_diligenci
 
 class Servicio:
     def __init__(self, repo: Repositorio, reloj=datetime.now, config_extraccion: Optional[ConfigExtraccion] = None,
-                 inicializar: bool = True):
+                 inicializar: bool = True, escenario: Optional[str] = None):
         self.repo = repo
         self.reloj = reloj
+        # Escenario del sandbox: "ampliado" por defecto, "base" para la demo mínima (ver datos_iniciales.py).
+        self.escenario = escenario or os.environ.get("SANDBOX_ESCENARIO") or ESCENARIO_POR_DEFECTO
         self.config_extraccion = config_extraccion or ConfigExtraccion.desde_entorno()
         if inicializar and repo.vacio:
             self.reiniciar()
@@ -102,6 +105,23 @@ class Servicio:
             "ultimo_escaneo": self.repo.datos["meta"].get("ultimo_escaneo"),
             "extraccion": self.config_extraccion.publica(),
             "tratamientos": list(reversed(self.repo.listar("tratamientos")))[:100],
+            "sandbox": self.info_sandbox(),
+        }
+
+    def info_sandbox(self) -> Dict[str, Any]:
+        """
+        El sandbox solo se carga con el repositorio vacío. Si el escenario configurado cambió después
+        (o los datos son de una versión anterior, sin escenario registrado), la interfaz lo avisa en vez
+        de recargar sola y borrar lo que el usuario hizo.
+        """
+        meta = self.repo.datos["meta"]
+        cargado = meta.get("escenario") or "base"     # datos anteriores al escenario ampliado
+        return {
+            "escenario_cargado": cargado,
+            "escenario_configurado": self.escenario,
+            "escenarios": list(ESCENARIOS),
+            "cargado_en": meta.get("cargado_en"),
+            "desactualizado": cargado != self.escenario and not meta.get("escenario_explicito"),
         }
 
     def obtener_caso(self, caso_id: str) -> Dict[str, Any]:
@@ -130,6 +150,62 @@ class Servicio:
 
     def ingresar_aviso(self, datos: Dict[str, Any], usuario: str) -> Dict[str, Any]:
         """Comprobante no estructurado (pantallazo, correo, aviso bancario) ya extraído."""
+        return self._cerrar_operacion({"aviso": self._insertar_aviso(datos, usuario)})
+
+    def crear_caso(self, campos: Dict[str, Any], comprobante: Optional[Dict[str, Any]], usuario: str) -> Dict[str, Any]:
+        """
+        Caso ingresado a mano, con un comprobante inicial opcional. Pasa por las mismas
+        validaciones que el importador y luego por el ciclo de detección: la respuesta incluye
+        los eventos críticos del caso y a quién se asignó cada tarea.
+        """
+        datos = importador.validar_caso_nuevo(self.repo, campos)
+        if comprobante is not None and int(comprobante.get("monto") or 0) <= 0:
+            raise ValueError("El monto del comprobante debe ser mayor que 0")
+        caso = importador.insertar_caso(
+            self.repo, datos, usuario, self.ahora(), "Caso creado",
+            f"Causa {datos['rol_causa']} de {datos['deudor_nombre']} ingresada desde el formulario.",
+        )
+        aviso = None
+        if comprobante is not None:
+            aviso = self._insertar_aviso({
+                "caso_id": caso["id"],
+                "monto": comprobante["monto"],
+                "canal": comprobante.get("canal") or "WhatsApp",
+                "origen": comprobante.get("origen") or "Comprobante enviado por el deudor",
+                "datos_extraidos": {"rut_depositante": caso["deudor"]["rut"], "nombre_depositante": caso["deudor"]["nombre"]},
+                "observaciones": "Comprobante recibido al ingresar el caso.",
+            }, usuario)
+        resultado = self._cerrar_operacion({"caso": caso, "aviso": aviso})
+        resultado["eventos_del_caso"] = self._resumen_eventos(caso["id"])
+        return resultado
+
+    def _resumen_eventos(self, caso_id: str) -> List[Dict[str, Any]]:
+        """Eventos de un caso con sus tareas y la decisión del asignador, para mostrarlos en la interfaz."""
+        nombres = {c["id"]: c["nombre"] for c in self.repo.listar("colaboradores")}
+        resumen = []
+        for evento in self.repo.filtrar("eventos", caso_id=caso_id):
+            tareas = []
+            for t in self.repo.filtrar("tareas", evento_id=evento["id"]):
+                asignacion = t.get("asignacion", {})
+                tareas.append({
+                    "id": t["id"],
+                    "area": t["area"],
+                    "titulo": t["titulo"],
+                    "sla_horas": t["sla_horas"],
+                    "responsable": nombres.get(t["responsable_id"], t["responsable_id"]),
+                    "puntaje": asignacion.get("puntaje"),
+                    "escalada": asignacion.get("escalada", False),
+                    "candidatos": [{"nombre": c["nombre"], "puntaje": c["puntaje"]} for c in asignacion.get("candidatos", [])[:3]],
+                    "excluidos": asignacion.get("excluidos", []),
+                })
+            resumen.append({
+                "id": evento["id"], "codigo": evento["codigo"], "nombre": evento["nombre"],
+                "prioridad": evento["prioridad"], "motivo": evento["motivo"], "riesgo_clp": evento["riesgo_clp"],
+                "riesgo_detalle": evento.get("riesgo_detalle", []), "tareas": tareas,
+            })
+        return resumen
+
+    def _insertar_aviso(self, datos: Dict[str, Any], usuario: str) -> Dict[str, Any]:
         ahora = self.ahora()
         extraidos = datos.get("datos_extraidos") or {}
         caso_id = datos.get("caso_id") or self._caso_por_rut(extraidos.get("rut_depositante"))
@@ -151,11 +227,19 @@ class Servicio:
             detalle=f"Aviso {aviso['id']} por ${aviso['monto']:,.0f} vía {aviso['canal']}.".replace(",", "."),
             entidad="Aviso", entidad_id=aviso["id"], caso_id=caso_id, ahora=ahora,
         )
-        return self._cerrar_operacion({"aviso": aviso})
+        return aviso
 
     def conciliar_planilla(self, registros: List[Dict[str, Any]], usuario: str) -> Dict[str, Any]:
         resultado = conciliador.conciliar_planilla(self.repo, registros, usuario, self.ahora())
         return self._cerrar_operacion({"conciliacion": resultado})
+
+    def importar_casos(self, contenido: str, mapeo: Optional[Dict[str, str]] = None, solo_validar: bool = False,
+                       usuario: str = importador.USUARIO_IMPORTACION) -> Dict[str, Any]:
+        """Carga de casos desde un CSV del CRM o de una planilla (ver controlador/importador.py)."""
+        reporte = importador.importar_casos(self.repo, contenido, mapeo, solo_validar, usuario, self.ahora())
+        if solo_validar:
+            return {"importacion": reporte}
+        return self._cerrar_operacion({"importacion": reporte})
 
     def extraer_comprobante(self, datos: Dict[str, Any], usuario: str) -> Dict[str, Any]:
         """
@@ -213,15 +297,20 @@ class Servicio:
 
     # --- Administración -------------------------------------------------------------
 
-    def reiniciar(self) -> Dict[str, Any]:
+    def reiniciar(self, escenario: Optional[str] = None) -> Dict[str, Any]:
         ahora = self.ahora()
-        self.repo.reemplazar(crear_datos_iniciales(ahora))
+        if escenario:
+            self.escenario = escenario
+        self.repo.reemplazar(crear_datos_iniciales(ahora, self.escenario))
+        # Si se eligió a mano, no se avisa que difiere del configurado: fue a propósito.
+        self.repo.datos["meta"]["escenario_explicito"] = bool(escenario)
         self.repo.registrar_historial(
             usuario="Integración sandbox", area="Integración", accion="Carga inicial del repositorio",
-            detalle="Casos, avisos, colaboradores e historial de desempeño cargados desde el entorno de pruebas.",
+            detalle=(f"Casos, avisos, colaboradores e historial de desempeño cargados desde el entorno de pruebas "
+                     f"(escenario {self.escenario})."),
             entidad="Caso", entidad_id="*", ahora=ahora,
         )
-        return self._cerrar_operacion({"mensaje": "Repositorio reiniciado con los datos del sandbox"})
+        return self._cerrar_operacion({"mensaje": f"Repositorio reiniciado con los datos del sandbox (escenario {self.escenario})"})
 
     def exportar(self, directorio: str) -> Dict[str, Any]:
         return {"archivos": self.repo.exportar_csv(directorio)}

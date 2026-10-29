@@ -55,7 +55,12 @@ PESOS = {
 }
 
 COSTO_INFACTIBLE = 1e6
-COSTO_ESCALAMIENTO = 10.0
+# Costo de dejar una tarea sin ejecutivo (escalarla a jefatura). Depende de la prioridad para que,
+# si el equipo no tiene capacidad para todo el lote, los cupos disponibles se usen primero en las
+# tareas críticas y lo que se escale sean las de menor prioridad. Como los puntajes están entre
+# 0 y 1, una diferencia de 10 entre niveles asegura ese orden.
+COSTO_ESCALAMIENTO_POR_PRIORIDAD = {"CRITICA": 30.0, "ALTA": 20.0, "MEDIA": 10.0}
+COSTO_ESCALAMIENTO = COSTO_ESCALAMIENTO_POR_PRIORIDAD["MEDIA"]
 
 
 # --- Historial y carga ------------------------------------------------------------
@@ -254,7 +259,8 @@ def asignar_lote(
             else:
                 fila.append(1 - puntaje(repo, c, t, casos[t["caso_id"]], carga)[0])
         # Columna ficticia propia de la tarea: escalar a la jefatura si no hay nadie factible.
-        fila.extend(COSTO_ESCALAMIENTO if j == len(costos) else COSTO_INFACTIBLE for j in range(len(tareas)))
+        costo_escalar = COSTO_ESCALAMIENTO_POR_PRIORIDAD.get(t["prioridad"], COSTO_ESCALAMIENTO)
+        fila.extend(costo_escalar if j == len(costos) else COSTO_INFACTIBLE for j in range(len(tareas)))
         costos.append(fila)
 
     solucion = metodo_hungaro(costos)
