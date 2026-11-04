@@ -21,6 +21,9 @@ interface Props {
 export const AsignacionView: React.FC<Props> = ({ estado, ejecutar }) => {
   const [filtro, setFiltro] = useState<Filtro>('pendientes');
   const [area, setArea] = useState<'todas' | 'Comercial' | 'Judicial'>('todas');
+  const miColaborador = estado.sesion.usuario.colaborador_id;
+  // Un ejecutivo parte viendo sus propias tareas; la gerencia, las de todo el equipo.
+  const [soloMias, setSoloMias] = useState(estado.sesion.usuario.nivel === 3 && Boolean(miColaborador));
 
   const colaboradores = useMemo(() => Object.fromEntries(estado.colaboradores.map((c) => [c.id, c])), [estado.colaboradores]);
   const resultados = useMemo(
@@ -38,6 +41,7 @@ export const AsignacionView: React.FC<Props> = ({ estado, ejecutar }) => {
       filtro === 'pendientes' ? t.estado === 'Pendiente' : filtro === 'vencidas' ? t.vencida : filtro === 'atendidas' ? t.estado === 'Atendida' : true,
     )
     .filter((t) => area === 'todas' || t.area === area)
+    .filter((t) => !soloMias || t.responsable_id === miColaborador)
     .sort((a, b) => orden[a.prioridad] - orden[b.prioridad] || a.fecha_limite.localeCompare(b.fecha_limite));
 
   return (
@@ -56,7 +60,7 @@ export const AsignacionView: React.FC<Props> = ({ estado, ejecutar }) => {
                 <li>Asignar cada tarea nueva (RACI + método húngaro)</li>
                 <li>Aplicar el calendario de ausencias y reasignar lo pendiente</li>
                 <li>No asignar a quien se ausenta antes del vencimiento</li>
-                <li>Tarea vencida → otro colaborador; si vuelve a vencer → jefatura</li>
+                <li>Tarea vencida → otro colaborador; si vuelve a vencer → gerencia del área</li>
               </ul>
             </div>
             <div className="rounded-lg border border-slate-700 bg-slate-950/50 p-2.5 text-slate-300">
@@ -82,7 +86,13 @@ export const AsignacionView: React.FC<Props> = ({ estado, ejecutar }) => {
                 {f}
               </button>
             ))}
-            <select value={area} onChange={(e) => setArea(e.target.value as any)} className={`${campoBase} ml-auto`} aria-label="Área">
+            {miColaborador && (
+              <label className="flex items-center gap-1.5 text-slate-300 ml-auto">
+                <input type="checkbox" checked={soloMias} onChange={(e) => setSoloMias(e.target.checked)} className="accent-indigo-500" />
+                Solo mis tareas
+              </label>
+            )}
+            <select value={area} onChange={(e) => setArea(e.target.value as any)} className={`${campoBase} ${miColaborador ? '' : 'ml-auto'}`} aria-label="Área">
               <option value="todas">Ambas áreas</option>
               <option>Comercial</option>
               <option>Judicial</option>
@@ -156,7 +166,7 @@ export const AsignacionView: React.FC<Props> = ({ estado, ejecutar }) => {
             Problema de asignación: maximizar Σ puntaje(colaborador, tarea) sujeto a que cada tarea tenga un responsable, nadie
             supere su capacidad y solo participen colaboradores disponibles, con la competencia y el cargo R. Se resuelve con el{' '}
             <strong className="text-slate-200">método húngaro</strong> sobre todas las tareas nuevas a la vez; si no hay nadie
-            factible, la tarea se escala a la jefatura (A).
+            factible, la tarea se escala a la gerencia del área (A).
           </p>
           <p>
             Pesos normales:{' '}
@@ -186,7 +196,7 @@ const TarjetaTarea: React.FC<{
 
   const atender = () =>
     ejecutar(
-      () => api.atenderTarea(tarea.id, resultado, notas, responsable?.nombre ?? 'Responsable'),
+      () => api.atenderTarea(tarea.id, resultado, notas),
       `Tarea ${tarea.id} atendida`,
     );
   const reasignar = () => {
@@ -204,7 +214,7 @@ const TarjetaTarea: React.FC<{
         <Etiqueta tono={tarea.area === 'Judicial' ? 'indigo' : 'emerald'}>{tarea.area}</Etiqueta>
         <BadgePrioridad prioridad={tarea.prioridad} />
         <BadgeEstadoTarea estado={tarea.estado} vencida={tarea.vencida} />
-        {a.escalada && <Etiqueta tono="red">Escalada a jefatura</Etiqueta>}
+        {a.escalada && <Etiqueta tono="red">Escalada a gerencia</Etiqueta>}
         {tarea.nivel_escalamiento === 1 && <Etiqueta tono="amber">Reasignada por vencimiento</Etiqueta>}
         {tarea.reasignaciones > 0 && <Etiqueta>Reasignada ×{tarea.reasignaciones}</Etiqueta>}
         <span className="ml-auto text-slate-500 font-mono">{tarea.id}</span>
@@ -218,7 +228,7 @@ const TarjetaTarea: React.FC<{
       {tarea.estado === 'Pendiente' && tarea.plazo_escalamiento && (
         <p className="text-amber-300 mt-0.5">
           Plazo del responsable actual: {fecha(tarea.plazo_escalamiento)} ({relativo(tarea.plazo_escalamiento, estado.ahora)})
-          {tarea.nivel_escalamiento === 1 && ' · si vence, pasa a la jefatura'}
+          {tarea.nivel_escalamiento === 1 && ' · si vence, pasa a la gerencia del área'}
         </p>
       )}
 
@@ -284,7 +294,9 @@ const TarjetaTarea: React.FC<{
         </div>
       )}
 
-      {tarea.estado === 'Pendiente' ? (
+      {tarea.estado === 'Pendiente' && !tarea.permisos.atender ? (
+        <p className="mt-2 text-slate-500">Solo su responsable o la gerencia del área pueden marcarla como atendida.</p>
+      ) : tarea.estado === 'Pendiente' ? (
         <div className="mt-3 grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto_auto] gap-2">
           <select value={resultado} onChange={(e) => setResultado(e.target.value)} className={campo} aria-label="Resultado">
             {resultados.map((r) => (
@@ -295,9 +307,11 @@ const TarjetaTarea: React.FC<{
           <Boton variante="primario" onClick={atender}>
             <CheckCircle2 className="w-4 h-4" /> Marcar atendida
           </Boton>
-          <Boton onClick={reasignar}>
-            <Shuffle className="w-4 h-4" /> Reasignar
-          </Boton>
+          {tarea.permisos.reasignar && (
+            <Boton onClick={reasignar}>
+              <Shuffle className="w-4 h-4" /> Reasignar
+            </Boton>
+          )}
         </div>
       ) : (
         <p className="mt-2 text-emerald-300">
@@ -366,10 +380,11 @@ const FilaColaborador: React.FC<{ colaborador: Colaborador; ahora: string; ejecu
         </div>
         <button
           onClick={alternar}
-          className={`flex items-center gap-1 px-2 py-1 rounded-lg border cursor-pointer ${
+          disabled={!c.permisos.gestionar}
+          className={`flex items-center gap-1 px-2 py-1 rounded-lg border cursor-pointer disabled:cursor-default ${
             c.disponible ? 'border-emerald-500/40 text-emerald-300' : 'border-red-500/40 text-red-300'
           }`}
-          title="Cambio manual de disponibilidad (excepción)"
+          title={c.permisos.gestionar ? 'Cambio manual de disponibilidad (excepción)' : 'Solo la gerencia del área cambia la disponibilidad'}
         >
           {c.disponible ? <UserCheck className="w-3.5 h-3.5" /> : <UserX className="w-3.5 h-3.5" />}
           {c.disponible ? 'Disponible' : 'No disponible'}
@@ -426,11 +441,11 @@ const FilaColaborador: React.FC<{ colaborador: Colaborador; ahora: string; ejecu
           </Boton>
           <Boton onClick={() => setFormulario(false)}>Cancelar</Boton>
         </div>
-      ) : (
+      ) : c.permisos.ausencia ? (
         <button onClick={() => setFormulario(true)} className="mt-1.5 text-indigo-300 hover:text-indigo-200 cursor-pointer">
           + Programar ausencia
         </button>
-      )}
+      ) : null}
     </li>
   );
 };

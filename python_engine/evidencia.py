@@ -176,7 +176,7 @@ def recorrido_demo(inicio: datetime) -> Dict[str, Any]:
         responsable = nombres.get(t["responsable_id"], "sin responsable")
         puntaje = f", puntaje {asignacion['puntaje']:.2f}" if asignacion.get("puntaje") is not None else ""
         if asignacion.get("escalada"):
-            puntaje = " (escalada a jefatura: ningún ejecutivo con capacidad disponible)"
+            puntaje = " (escalada a la gerencia del área: ningún ejecutivo con capacidad disponible)"
         return (f"{t['id']} · {t['area']} · {t['titulo']} → **{responsable}**{puntaje}; "
                 f"SLA {t['sla_horas']} h (vence {desde_iso(t['fecha_limite']).strftime('%d-%m %H:%M')})")
 
@@ -269,7 +269,7 @@ def recorrido_demo(inicio: datetime) -> Dict[str, Any]:
     reasignadas = [repo.obtener("tareas", tid) for tid in r["reasignadas"]]
     paso(f"6. RR.HH. informa una licencia de {nombres[ausente]}", [
         f"Tenía {len(antes)} tareas pendientes; el sistema reasignó {len(reasignadas)} en el acto:",
-    ] + [f"{t['id']} → {nombres.get(t['responsable_id'], 'jefatura')}" for t in reasignadas])
+    ] + [f"{t['id']} → {nombres.get(t["responsable_id"], "gerencia del área")}" for t in reasignadas])
 
     # Paso 7: pasan 10 horas sin atender; las tareas vencidas se reasignan o escalan.
     reloj.avanzar(hours=10)
@@ -278,7 +278,7 @@ def recorrido_demo(inicio: datetime) -> Dict[str, Any]:
     niveles = Counter(x["nivel"] for x in escaladas)
     paso("7. Pasan 10 horas sin que nadie atienda las tareas pendientes", [
         f"{len(escaladas)} tareas vencieron: {niveles.get(1, 0)} se reasignaron a otro ejecutivo con la mitad del SLA "
-        f"(nivel 1) y {niveles.get(2, 0)} pasaron a la jefatura (nivel 2). Algunos ejemplos:",
+        f"(nivel 1) y {niveles.get(2, 0)} pasaron a la gerencia del área (nivel 2). Algunos ejemplos:",
     ] + [f"{x['id']} → nivel {x['nivel']} · ahora a cargo de {nombres.get(repo.obtener('tareas', x['id'])['responsable_id'], '—')}"
          for x in escaladas[:6]] + (["El incumplimiento queda en el historial del responsable original."] if escaladas else []))
 
@@ -295,7 +295,7 @@ SUPUESTOS_SIMULACION = (
     "Los avisos de pago y los cambios del CRM llegan a cualquier hora, incluso noches y fines de semana.",
     "Cada aviso se registra en el sistema al llegar (API o formulario).",
     "Cada tarea la atiende su responsable tras un tiempo tomado al azar de su propio historial para ese tipo "
-    "de tarea, contado desde que la recibe; si no tiene historial (jefaturas), entre 50% y 120% del SLA. "
+    "de tarea, contado desde que la recibe; si no tiene historial (gerencias de área), entre 50% y 120% del SLA. "
     "Ese historial es ficticio y no distingue tareas urgentes de normales.",
     "No se modela el horario laboral: una tarea que llega a las 3 AM se atiende igual de rápido que una de las 11 AM. "
     "En la realidad, sin un turno fuera de horario, los tiempos nocturnos y de fin de semana serían peores.",

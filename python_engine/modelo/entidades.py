@@ -53,10 +53,23 @@ AREAS = ("Comercial", "Judicial")
 
 CARGOS = (
     "Ejecutivo Comercial",
-    "Jefe Comercial",
+    "Gerente Comercial",
     "Ejecutivo Judicial",
-    "Jefe Judicial",
+    "Gerente Judicial",
 )
+
+# Niveles de acceso al sistema (ver controlador/permisos.py).
+#   1: gerencia general, acceso completo · 2: gerencia de área · 3: ejecutivos y abogados.
+NIVEL_POR_CARGO = {
+    "Gerente General": 1,
+    "Subgerente": 1,
+    "Gerente Comercial": 2,
+    "Gerente Judicial": 2,
+    "Ejecutivo Comercial": 3,
+    "Ejecutivo Judicial": 3,
+}
+
+DOMINIO_CORREO = "cobgestion.cl"
 
 # Costo real asumido por Cobgestion en una incautación indebida (grúa, receptor, custodia y costas).
 # Es la referencia para calibrar las tarifas de controlador/riesgo.py, no el riesgo de cada evento.
@@ -209,3 +222,45 @@ class RegistroHistorial:
     entidad_id: str
     caso_id: Optional[str] = None
     cambios: Dict[str, List[Any]] = field(default_factory=dict)   # campo -> [antes, después]
+
+
+@dataclass
+class Usuario:
+    """Cuenta de acceso. Los ejecutivos y gerentes de área son además colaboradores (reciben tareas)."""
+    id: str
+    nombre: str
+    email: str
+    cargo: str
+    nivel: int
+    area: str                       # Gerencia | Comercial | Judicial
+    colaborador_id: Optional[str] = None
+    clave_hash: Optional[str] = None    # scrypt; sin hash solo entra con la clave de demostración del sandbox
+    activo: bool = True
+
+
+@dataclass
+class Notificacion:
+    id: str
+    usuario_id: str
+    tipo: str                       # asignacion | reasignacion | escalamiento | tarea_retirada | vencida | titular
+    titulo: str
+    mensaje: str                    # sin datos personales del deudor: solo códigos de caso y tarea
+    fecha: str
+    prioridad: Optional[str] = None
+    caso_id: Optional[str] = None
+    tarea_id: Optional[str] = None
+    correo_id: Optional[str] = None
+    leida: bool = False
+
+
+@dataclass
+class Correo:
+    """Correo generado por el sistema. En el sandbox no se envía: queda en la bandeja simulada."""
+    id: str
+    para: str
+    para_nombre: str
+    asunto: str
+    cuerpo: str
+    fecha: str
+    notificacion_id: str
+    estado: str = "simulado"        # simulado | enviado

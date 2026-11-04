@@ -22,6 +22,12 @@ export interface Caso {
   fecha_creacion: string;
   ultima_actualizacion: string;
   fecha_diligencia: string | null;
+  /** Campos que quien consulta puede modificar (según su nivel y área). */
+  campos_editables: string[];
+  /** El caso es de quien consulta (titular o con una tarea suya). */
+  propio: boolean;
+  /** Nivel 3 en un caso ajeno: los datos personales del deudor vienen ocultos (Ley 21.719). */
+  restringido?: boolean;
 }
 
 export interface AvisoPago {
@@ -101,6 +107,7 @@ export interface Tarea {
   nivel_escalamiento: number;
   plazo_escalamiento: string | null;
   vencida: boolean;
+  permisos: { atender: boolean; reasignar: boolean };
 }
 
 export interface Ausencia {
@@ -131,6 +138,7 @@ export interface Colaborador {
   carga_actual: number;
   historico: PerfilHistorico;
   historico_por_tipo: Record<string, PerfilHistorico>;
+  permisos: { gestionar: boolean; ausencia: boolean };
 }
 
 export interface RegistroHistorial {
@@ -213,6 +221,69 @@ export interface EstadoSistema {
   extraccion: ConfigExtraccion;
   tratamientos: RegistroTratamiento[];
   sandbox: InfoSandbox;
+  sesion: Sesion;
+  notificaciones: Notificacion[];
+  notificaciones_sin_leer: number;
+  correos: Correo[];
+}
+
+export type Nivel = 1 | 2 | 3;
+
+export interface Usuario {
+  id: string;
+  nombre: string;
+  email: string;
+  cargo: string;
+  nivel: Nivel;
+  area: 'Gerencia' | Area;
+  colaborador_id: string | null;
+}
+
+export interface Sesion {
+  usuario: Usuario;
+  permisos: {
+    crear_casos: boolean;
+    importar_casos: boolean;
+    conciliar_planillas: boolean;
+    reasignar_tareas: boolean;
+    gestionar_equipo: boolean;
+    exportar: boolean;
+    reiniciar_sandbox: boolean;
+    ver_tratamientos: boolean;
+    ver_todos_los_correos: boolean;
+  };
+}
+
+export interface Notificacion {
+  id: string;
+  usuario_id: string;
+  tipo: 'asignacion' | 'reasignacion' | 'escalamiento' | 'tarea_retirada' | 'vencida' | 'titular';
+  titulo: string;
+  mensaje: string;
+  fecha: string;
+  prioridad: Prioridad | null;
+  caso_id: string | null;
+  tarea_id: string | null;
+  correo_id: string | null;
+  leida: boolean;
+}
+
+/** Correo generado por el sistema; en el sandbox queda en la bandeja simulada sin enviarse. */
+export interface Correo {
+  id: string;
+  para: string;
+  para_nombre: string;
+  asunto: string;
+  cuerpo: string;
+  fecha: string;
+  notificacion_id: string;
+  estado: 'simulado' | 'enviado';
+}
+
+export interface CuentasDemo {
+  modo_demo: boolean;
+  clave?: string;
+  usuarios?: { nombre: string; email: string; cargo: string; nivel: Nivel; area: string }[];
 }
 
 export interface InfoSandbox {

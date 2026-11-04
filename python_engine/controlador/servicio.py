@@ -12,7 +12,7 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from controlador import conciliador, detector, extraccion, importador, seguimiento
+from controlador import conciliador, detector, extraccion, importador, notificaciones, seguimiento
 from controlador.asignador import MATRIZ_RACI, PESOS, asignar_lote, carga_actual, perfil_historico
 from controlador.catalogo_eventos import catalogo_serializado
 from controlador.conciliador import normalizar_rut
@@ -26,6 +26,7 @@ from modelo.entidades import (
     a_iso,
 )
 from modelo.repositorio import Repositorio
+from modelo.usuarios import asegurar_usuarios, buscar_por_email, clave_demo, modo_demo, publico, verificar_clave
 
 CAMPOS_CASO_EDITABLES = ("estado_comercial", "estado_judicial", "fecha_diligencia", "responsable_comercial", "responsable_judicial")
 
@@ -38,8 +39,13 @@ class Servicio:
         # Escenario del sandbox: "ampliado" por defecto, "base" para la demo mínima (ver datos_iniciales.py).
         self.escenario = escenario or os.environ.get("SANDBOX_ESCENARIO") or ESCENARIO_POR_DEFECTO
         self.config_extraccion = config_extraccion or ConfigExtraccion.desde_entorno()
+        self._foto = None
         if inicializar and repo.vacio:
             self.reiniciar()
+        elif inicializar and asegurar_usuarios(repo.datos):
+            repo.guardar()   # repositorio guardado antes del login: se migra una sola vez
+        # Quién tenía cada tarea y cada caso al empezar: base para notificar los cambios.
+        self._foto = notificaciones.foto(repo)
 
     def ahora(self) -> datetime:
         return self.reloj().replace(microsecond=0)
@@ -69,8 +75,12 @@ class Servicio:
     def escanear(self) -> Dict[str, Any]:
         return self._cerrar_operacion({})
 
-    def _cerrar_operacion(self, resultado: Dict[str, Any]) -> Dict[str, Any]:
+    def _cerrar_operacion(self, resultado: Dict[str, Any], notificar: bool = True) -> Dict[str, Any]:
         resultado["deteccion"] = self.ciclo_deteccion()
+        if notificar and self._foto is not None:
+            creadas = notificaciones.generar(self.repo, self._foto, self.ahora())
+            resultado["notificaciones_enviadas"] = len(creadas)
+        self._foto = notificaciones.foto(self.repo)
         self.repo.guardar()
         return resultado
 
@@ -295,6 +305,26 @@ class Servicio:
         reasignadas = seguimiento.registrar_ausencia(self.repo, colaborador_id, desde, hasta, motivo, usuario, self.ahora())
         return self._cerrar_operacion({"reasignadas": [t["id"] for t in reasignadas]})
 
+    # --- Acceso y notificaciones -----------------------------------------------------
+
+    def iniciar_sesion(self, email: str, clave: str) -> Dict[str, Any]:
+        usuario = buscar_por_email(self.repo.listar("usuarios"), email)
+        if not usuario or not verificar_clave(usuario, clave or ""):
+            raise ValueError("Correo o clave incorrectos")
+        return publico(usuario)
+
+    def usuarios_demo(self) -> Dict[str, Any]:
+        """Cuentas del sandbox para entrar con un clic en la demo. Fuera del modo demo no se informa nada."""
+        if not modo_demo():
+            return {"modo_demo": False}
+        usuarios = [{k: u[k] for k in ("nombre", "email", "cargo", "nivel", "area")} for u in self.repo.listar("usuarios")]
+        return {"modo_demo": True, "clave": clave_demo(), "usuarios": sorted(usuarios, key=lambda u: (u["nivel"], u["area"]))}
+
+    def leer_notificaciones(self, usuario_id: str, ids: Optional[List[str]] = None) -> Dict[str, Any]:
+        marcadas = notificaciones.marcar_leidas(self.repo, usuario_id, ids)
+        self.repo.guardar()
+        return {"marcadas": marcadas}
+
     # --- Administración -------------------------------------------------------------
 
     def reiniciar(self, escenario: Optional[str] = None) -> Dict[str, Any]:
@@ -310,7 +340,10 @@ class Servicio:
                      f"(escenario {self.escenario})."),
             entidad="Caso", entidad_id="*", ahora=ahora,
         )
-        return self._cerrar_operacion({"mensaje": f"Repositorio reiniciado con los datos del sandbox (escenario {self.escenario})"})
+        # La carga inicial no notifica: serían decenas de correos por asignaciones que nadie hizo.
+        return self._cerrar_operacion(
+            {"mensaje": f"Repositorio reiniciado con los datos del sandbox (escenario {self.escenario})"}, notificar=False
+        )
 
     def exportar(self, directorio: str) -> Dict[str, Any]:
         return {"archivos": self.repo.exportar_csv(directorio)}

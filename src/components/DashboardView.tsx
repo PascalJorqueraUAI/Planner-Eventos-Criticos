@@ -158,52 +158,54 @@ export const DashboardView: React.FC<{ estado: EstadoSistema }> = ({ estado }) =
         </div>
       </Tarjeta>
 
-      <Tarjeta>
-        <TituloSeccion
-          icono={<ShieldCheck className="w-5 h-5" />}
-          titulo="Registro de tratamientos con terceros"
-          subtitulo={`Cada envío de datos a un encargado del tratamiento (Gemini), con su finalidad y resguardos. Nunca se guarda el contenido, solo su huella SHA-256. ${estado.extraccion.motivo}`}
-        />
-        {estado.tratamientos.length === 0 ? (
-          <p className="p-4 text-xs text-slate-500">No se han enviado datos a terceros.</p>
-        ) : (
-          <div className="overflow-x-auto max-h-[360px] overflow-y-auto">
-            <table className="w-full min-w-[820px] text-xs">
-              <thead className="text-slate-500 text-left sticky top-0 bg-slate-900">
-                <tr>
-                  <th className="px-4 py-2 font-medium">Fecha</th>
-                  <th className="px-2 font-medium">Operador</th>
-                  <th className="px-2 font-medium">Entrada</th>
-                  <th className="px-2 font-medium">Destino</th>
-                  <th className="px-2 font-medium">Medidas aplicadas</th>
-                  <th className="px-2 font-medium">Huella</th>
-                  <th className="px-4 font-medium">Resultado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {estado.tratamientos.map((t) => (
-                  <tr key={t.id} className="border-t border-slate-800/70 align-top">
-                    <td className="px-4 py-1.5 font-mono text-slate-500 whitespace-nowrap">{fecha(t.timestamp)}</td>
-                    <td className="px-2 text-slate-300">{t.usuario}</td>
-                    <td className="px-2 text-slate-300">{t.tipo_entrada}</td>
-                    <td className="px-2 text-slate-400">
-                      {t.modelo}
-                      <p className="text-slate-600">{t.ubicacion}</p>
-                    </td>
-                    <td className="px-2 text-slate-400">{t.medidas.join(' · ')}</td>
-                    <td className="px-2 font-mono text-slate-500" title={t.hash_entrada}>
-                      {t.hash_entrada.slice(0, 10)}…
-                    </td>
-                    <td className="px-4">
-                      <Etiqueta tono={t.resultado === 'ok' ? 'emerald' : 'red'}>{t.resultado}</Etiqueta>
-                    </td>
+      {estado.sesion.permisos.ver_tratamientos && (
+        <Tarjeta>
+          <TituloSeccion
+            icono={<ShieldCheck className="w-5 h-5" />}
+            titulo="Registro de tratamientos con terceros"
+            subtitulo={`Cada envío de datos a un encargado del tratamiento (Gemini), con su finalidad y resguardos. Nunca se guarda el contenido, solo su huella SHA-256. ${estado.extraccion.motivo}`}
+          />
+          {estado.tratamientos.length === 0 ? (
+            <p className="p-4 text-xs text-slate-500">No se han enviado datos a terceros.</p>
+          ) : (
+            <div className="overflow-x-auto max-h-[360px] overflow-y-auto">
+              <table className="w-full min-w-[820px] text-xs">
+                <thead className="text-slate-500 text-left sticky top-0 bg-slate-900">
+                  <tr>
+                    <th className="px-4 py-2 font-medium">Fecha</th>
+                    <th className="px-2 font-medium">Operador</th>
+                    <th className="px-2 font-medium">Entrada</th>
+                    <th className="px-2 font-medium">Destino</th>
+                    <th className="px-2 font-medium">Medidas aplicadas</th>
+                    <th className="px-2 font-medium">Huella</th>
+                    <th className="px-4 font-medium">Resultado</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Tarjeta>
+                </thead>
+                <tbody>
+                  {estado.tratamientos.map((t) => (
+                    <tr key={t.id} className="border-t border-slate-800/70 align-top">
+                      <td className="px-4 py-1.5 font-mono text-slate-500 whitespace-nowrap">{fecha(t.timestamp)}</td>
+                      <td className="px-2 text-slate-300">{t.usuario}</td>
+                      <td className="px-2 text-slate-300">{t.tipo_entrada}</td>
+                      <td className="px-2 text-slate-400">
+                        {t.modelo}
+                        <p className="text-slate-600">{t.ubicacion}</p>
+                      </td>
+                      <td className="px-2 text-slate-400">{t.medidas.join(' · ')}</td>
+                      <td className="px-2 font-mono text-slate-500" title={t.hash_entrada}>
+                        {t.hash_entrada.slice(0, 10)}…
+                      </td>
+                      <td className="px-4">
+                        <Etiqueta tono={t.resultado === 'ok' ? 'emerald' : 'red'}>{t.resultado}</Etiqueta>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Tarjeta>
+      )}
     </div>
   );
 };

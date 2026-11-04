@@ -349,7 +349,7 @@ const ResultadoCreacion: React.FC<{
                 <div className="flex items-center gap-2">
                   <Etiqueta tono={t.area === 'Judicial' ? 'indigo' : 'emerald'}>{t.area}</Etiqueta>
                   <span className="text-slate-500">SLA {t.sla_horas} h</span>
-                  {t.escalada && <Etiqueta tono="red">Escalada a jefatura</Etiqueta>}
+                  {t.escalada && <Etiqueta tono="red">Escalada a gerencia</Etiqueta>}
                 </div>
                 <p className="text-slate-200">{t.titulo}</p>
                 <p className="text-slate-300">

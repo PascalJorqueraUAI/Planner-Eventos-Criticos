@@ -22,6 +22,8 @@ Cobgestion trabaja con un sistema híbrido de CRM y planillas. Los pagos quedan 
 | 3 | **Asignación y seguimiento** | Asigna cada tarea con una **matriz RACI** y un **modelo de asignación óptima** (método húngaro) según el historial, la disponibilidad y la carga de los colaboradores. La tarea queda *Pendiente* hasta que se marca *Atendida*. | `controlador/asignador.py`, `controlador/seguimiento.py`, `AsignacionView.tsx` |
 | 4 | **Dashboard de trazabilidad** | Estado real de los casos y métricas de desempeño: SLA, tareas vencidas, desfase aviso→alerta, carga por colaborador, riesgo expuesto y cubierto, y registro de auditoría. | `controlador/trazabilidad.py`, `DashboardView.tsx` |
 
+Los cuatro módulos funcionan con **inicio de sesión, permisos por nivel de cargo y notificaciones de asignación** (ver [Acceso por niveles y notificaciones](#acceso-por-niveles-y-notificaciones)).
+
 ### Catálogo de eventos críticos
 
 | Código | Evento | Condición | Tareas paralelas |
@@ -81,6 +83,47 @@ Lo único manual es **marcar la tarea como atendida** con su resultado. Reasigna
 
 La interfaz muestra, para cada tarea, el ranking de candidatos, el puntaje por criterio y el motivo por el que cada persona quedó excluida.
 
+## Acceso por niveles y notificaciones
+
+Cada persona entra con su correo institucional (`nombre.apellido@cobgestion.cl`). Lo que ve y puede hacer depende de su cargo. Los permisos se validan en el motor ([permisos.py](python_engine/controlador/permisos.py)) en cada solicitud: la interfaz solo oculta los botones que no corresponden.
+
+| Acción | Nivel 1 · Gerente General y Subgerente | Nivel 2 · Gerente Comercial y Gerente Judicial | Nivel 3 · Ejecutivos y abogados |
+|---|---|---|---|
+| Ver casos | Todos | Todos | Todos; en los que no lleva, datos personales del deudor ocultos |
+| Crear o importar casos | ✔ | ✔ | ✘ (llegan desde el CRM) |
+| Editar un caso | Todos los campos | Los de su área y el titular de su área | Los de su área, solo en sus casos |
+| Registrar comprobantes | ✔ | ✔ | ✔ |
+| Conciliar planillas de mandantes | ✔ | Solo Comercial | Solo Comercial |
+| Atender una tarea | Cualquiera | Las de su área | Solo las suyas |
+| Reasignar una tarea | Cualquiera | Las de su área | ✘ |
+| Disponibilidad y ausencias | De todos | De su equipo | Informar sus propias ausencias |
+| Exportar a Excel, reiniciar el sandbox, registro de envíos a Gemini | ✔ | ✘ | ✘ |
+| Bandeja de correos | Todos los correos | Los suyos | Los suyos |
+
+**Nivel 3 y la Ley 21.719.** Los ejecutivos ven todos los casos para coordinarse, pero en los que no llevan (no son titulares ni tienen una tarea) se ocultan:
+- el nombre del deudor, que se muestra en iniciales;
+- el RUT;
+- el correo y el teléfono;
+- la patente.
+
+Las empresas (RUT desde 50.000.000) mantienen su nombre, porque la ley protege a personas naturales. El motivo de las ausencias de los compañeros se muestra como "motivo reservado", porque una licencia médica es un dato de salud.
+
+**Notificaciones.** Cuando el sistema asigna una tarea a alguien, se la reasigna o lo deja como titular de un caso nuevo, esa persona recibe:
+- un aviso en la campana del encabezado;
+- un correo a su casilla @cobgestion.cl.
+
+Además, quien tenía una tarea reasignada recibe un aviso de que ya no está a su cargo, y la gerencia del área recibe uno cuando una tarea vence. Las tareas críticas llevan "[CRÍTICA]" en el asunto del correo.
+
+Los correos no incluyen datos del deudor: solo los códigos de caso y tarea, el plazo y el enlace al sistema. La carga inicial del sandbox no genera notificaciones.
+
+**Correos simulados.** En el sandbox los correos **no se envían**: quedan en la **bandeja de correos** (ícono de sobre en el encabezado). Cada correo tiene su propio enlace, por ejemplo <http://localhost:3000/#correos/MAIL-0001>. El Nivel 1 ve la bandeja de todos los usuarios, así que basta con entrar como gerente general para revisar todos los correos.
+
+**Cuentas del sandbox.** En modo demo (`MODO_DEMO="si"`), la pantalla de inicio muestra las 16 cuentas agrupadas por nivel para entrar con un clic. La clave de demostración es `CLAVE_DEMO` (por defecto `cobgestion`).
+
+En operación real:
+- usa `MODO_DEMO="no"` y da a cada usuario su propia clave, que se guarda como hash scrypt (`modelo/usuarios.py → hash_clave`);
+- define `SESSION_SECRET` en el `.env`.
+
 ## Extracción de comprobantes y protección de datos personales
 
 La extracción con IA es **complementaria al registro**: solo prellena el formulario. El comprobante siempre se puede registrar a mano, y nada se registra sin que una persona revise los datos. El diseño considera la Ley 19.628, hoy vigente, y la Ley 21.719, que entra en vigencia el 1 de diciembre de 2026.
@@ -112,16 +155,20 @@ python_engine/
 ├── modelo/                    MODELO: datos y acceso al repositorio
 │   ├── entidades.py           Esquema de cada hoja (Caso, AvisoPago, EventoCritico, Tarea, Colaborador…)
 │   ├── repositorio.py         Persistencia JSON, historial de cambios, exportación CSV
-│   └── datos_iniciales.py     Datos del sandbox (casos, colaboradores e historial de desempeño)
+│   ├── usuarios.py            Cuentas, correos institucionales y claves (scrypt)
+│   └── datos_iniciales.py     Datos del sandbox (casos, colaboradores, usuarios e historial de desempeño)
 ├── controlador/               CONTROLADOR: reglas de negocio
 │   ├── catalogo_eventos.py    Catálogo declarativo de eventos críticos
 │   ├── detector.py            Detector de eventos (idempotente)
+│   ├── riesgo.py              Riesgo de cada evento según el apremio, el bien y la deuda
 │   ├── asignador.py           Matriz RACI + método húngaro
 │   ├── seguimiento.py         Atender, cierre coordinado, calendario de ausencias, escalamiento
 │   ├── importador.py          Carga de casos desde CSV del CRM o planillas, con validación
 │   ├── conciliador.py         Planillas estructuradas de mandantes
 │   ├── extraccion.py          Extracción local + Gemini con seudonimización y registro de tratamientos
 │   ├── trazabilidad.py        Métricas del dashboard
+│   ├── permisos.py            Permisos por nivel y ocultamiento de datos personales
+│   ├── notificaciones.py      Avisos de asignación y correos (simulados en el sandbox)
 │   └── servicio.py            Casos de uso; cada cambio dispara un ciclo de detección
 ├── tests/                     Pruebas unitarias por componente (unittest)
 ├── cli.py                     Punto de entrada: comando + JSON por stdin → JSON por stdout
@@ -134,8 +181,16 @@ src/                           VISTA: React + Tailwind (una vista por módulo)
 
 ### API REST (integración con los sistemas de Cobgestion)
 
+Toda ruta requiere una de estas dos credenciales:
+- **Personas:** la sesión, una cookie que se obtiene con `POST /api/v1/sesion`.
+- **Sistemas externos** (CRM, banco, RR.HH.): la clave de servicio `COBGESTION_API_KEY`, en la cabecera `X-API-Key`.
+
+Sin ninguna de las dos, la API responde 401. Si la acción no está permitida para quien llama, responde 403.
+
 | Método | Ruta | Uso |
 |---|---|---|
+| POST · GET · DELETE | `/api/v1/sesion` | `{ email, clave }`: inicia sesión · usuario y permisos de la sesión · cierra la sesión |
+| GET | `/api/v1/sesion/demo` | Cuentas del sandbox (solo en modo demo) |
 | GET | `/api/v1/estado` | Estado completo para la Vista |
 | GET | `/api/v1/casos`, `/api/v1/casos/:id` | Casos (con avisos, eventos, tareas e historial) |
 | POST | `/api/v1/casos` | `{ caso, comprobante? }`: crea un caso con las mismas validaciones del importador, y opcionalmente su primer comprobante. Responde con los eventos detectados y la asignación de cada tarea |
@@ -151,6 +206,8 @@ src/                           VISTA: React + Tailwind (una vista por módulo)
 | PATCH | `/api/v1/colaboradores/:id/disponibilidad` | `{ disponible, motivo }`: cambio manual; reasigna las pendientes |
 | POST | `/api/v1/colaboradores/:id/ausencias` | `{ desde, hasta, motivo }`: ausencia programada (RR.HH. / CRM) |
 | GET | `/api/v1/metricas` | Métricas del dashboard |
+| POST | `/api/v1/notificaciones/leer` | `{ ids? }`: marca notificaciones como leídas (sin `ids`, todas) |
+| GET | `/api/v1/correos` | Bandeja de correos simulados de quien consulta (todos, para el Nivel 1) |
 | POST | `/api/v1/exportar` · `/api/v1/reiniciar` | Exportar a CSV · recargar el sandbox |
 
 Ejemplo, el CRM avisa que una causa tiene orden de incautación con diligencia mañana:
@@ -158,6 +215,7 @@ Ejemplo, el CRM avisa que una causa tiene orden de incautación con diligencia m
 ```bash
 curl -X PATCH http://localhost:3000/api/v1/casos/CASO-1055 \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: $COBGESTION_API_KEY" \
   -d '{"cambios": {"estado_judicial": "Orden de incautación vigente", "estado_comercial": "En negociación", "fecha_diligencia": "2026-10-27T10:00:00"}}'
 ```
 
@@ -195,6 +253,8 @@ El sistema funciona **sin clave de Gemini**: la extracción de comprobantes qued
 4. Comprueba que funciona con `npm run test:gemini`.
 5. En la interfaz, *Registrar comprobante* debe mostrar "Gemini habilitado" con el modelo en uso.
 
+El acceso funciona sin configurar nada: `MODO_DEMO="si"` y la clave de demostración `cobgestion`. Si van a dejar el sistema corriendo para otros, definan `SESSION_SECRET` (y `COBGESTION_API_KEY` si un sistema externo usará la API). Las instrucciones están en `.env.example`.
+
 Configuración verificada con llamadas reales (26-10-2026): `GEMINI_MODEL="gemini-3.6-flash"` y `GEMINI_THINKING_LEVEL="minimal"`. Con imágenes de comprobantes respondió entre 5 y 30 s según la demanda. Si Google devuelve 503 o se demora, el sistema reintenta solo hasta por unos 100 s.
 
 > ⚠️ **Plan gratuito: solo datos ficticios.** Una clave nueva de AI Studio queda en el plan gratuito, salvo que el proyecto tenga facturación activa. En ese plan:
@@ -207,12 +267,13 @@ Configuración verificada con llamadas reales (26-10-2026): `GEMINI_MODEL="gemin
 npm run dev
 ```
 
-Abre <http://localhost:3000>. La primera vez se crea `python_engine/data_store.json` con los datos del sandbox (no se versiona). El botón **Reiniciar sandbox** vuelve al estado inicial.
+Abre <http://localhost:3000> e inicia sesión: en la pantalla de inicio aparecen las cuentas del sandbox para entrar con un clic. La primera vez se crea `python_engine/data_store.json` con los datos del sandbox (no se versiona). El botón **Reiniciar sandbox**, visible solo para el Nivel 1, vuelve al estado inicial.
 
 En Windows, ejecuta los comandos desde **PowerShell** o la terminal de VS Code, no desde Git Bash (ver problemas frecuentes).
 
 ### 5. Recorrido sugerido para la demo
 
+0. **Inicio de sesión:** entra como **Fernando García-Huidobro** (Nivel 1) para tener acceso completo. Al final del recorrido se muestran los otros niveles (paso 9).
 1. **Repositorio:** abre CASO-1052 (el auto Suzuki) y revisa su historial de cambios.
 2. **Detector:** hay 16 eventos detectados al cargar el sandbox ampliado (24 casos, 14 colaboradores). EC-01 del CASO-1052 es el comprobante del auto, con prioridad crítica y SLA judicial de 4 h.
 3. **Asignación:** en "¿Por qué esta persona?" se ve que Camila, titular del caso, quedó excluida por su permiso en el calendario. Programa una ausencia a otro colaborador y mira cómo se reasignan sus tareas.
@@ -227,12 +288,21 @@ En Windows, ejecuta los comandos desde **PowerShell** o la terminal de VS Code, 
 6. **Repositorio → Registrar comprobante:** registra el correo del camión KR-WP-19. El detector crea el evento en el acto.
 7. **Gemini (si está habilitado):** en *Registrar comprobante → Imagen*, sube `python_engine/tests/fixtures/comprobante_ficticio.png`, confirma el envío y presiona *Extraer datos*. Se prellenan monto, RUT y N° de operación. Con el ejemplo "WhatsApp sin N° de operación", despliega "Ver exactamente qué texto salió hacia Gemini" para mostrar la seudonimización (`[RUT_1]`, `[CORREO_1]`…).
 8. **Trazabilidad:** métricas, carga por colaborador, auditoría y el registro de tratamientos, donde queda cada envío a Gemini.
+9. **Niveles y notificaciones:**
+   1. Cierra sesión (ícono a la derecha del nombre) y entra como **Patricia Lagos** (Gerente Comercial, Nivel 2).
+   2. Crea un caso con "Auto con incautación + comprobante". El aviso inferior dice cuántas notificaciones se enviaron.
+   3. Entra como la persona que recibió la tarea comercial, por ejemplo **Tomás Navarro** (Nivel 3). Muestra:
+      - la campana con la notificación;
+      - el correo que le llegó, con el ícono de sobre;
+      - "Solo mis tareas" en Asignación;
+      - en Repositorio, los casos ajenos con el deudor en iniciales y un candado.
+   4. Vuelve a entrar como gerente general y abre la bandeja: están los correos de todos.
 
 ### 6. Pruebas
 
 | Comando | Qué hace | Red |
 |---|---|---|
-| `npm test` | Pruebas unitarias del motor Python (detector, riesgo, asignación, seguimiento, ingreso e importación de casos, extracción, privacidad, evidencia) | No |
+| `npm test` | Pruebas unitarias del motor Python (detector, riesgo, asignación, seguimiento, ingreso e importación de casos, acceso por niveles, notificaciones, extracción, privacidad, evidencia) | No |
 | `npm run lint` | Chequeo de tipos de la Vista y la API | No |
 | `npm run evidencia` | Genera `evidencia/<fecha>/` con el resumen para la presentación: detección caso por caso, recorrido de la demo, simulación de una semana, pruebas y exportaciones CSV (ver [Paquete de evidencia](#paquete-de-evidencia)) | No |
 | `npm run test:gemini` | Integración **real** con Gemini usando solo datos ficticios (texto y `tests/fixtures/comprobante_ficticio.png`). Se omite si no hay clave o si la cuota está agotada. | Sí, gasta 2 de las 20 solicitudes diarias |
@@ -255,6 +325,8 @@ py -3 python_engine/importar_casos.py casos.csv --validar
 | `spawn py ENOENT` o "no se encontró py" | En Windows, Git Bash no ve el lanzador `py`. Usa PowerShell. Si tampoco funciona ahí, instala Python desde python.org marcando "py launcher". |
 | `EADDRINUSE ... 3000` | Ya hay otra instancia corriendo. Ciérrala (Ctrl+C en su terminal) o cambia `PORT` en el `.env`. |
 | La interfaz falla tras actualizar el código | El `data_store.json` quedó con un formato anterior. Presiona **Reiniciar sandbox** o borra `python_engine/data_store.json`. |
+| La interfaz vuelve a pedir inicio de sesión | La sesión dura 8 horas. Además, sin `SESSION_SECRET` en el `.env`, reiniciar `npm run dev` cierra todas las sesiones. |
+| Un `curl` a la API responde 401 | La API ahora exige credenciales: inicia sesión desde el navegador o envía `X-API-Key` con la clave `COBGESTION_API_KEY` del `.env`. |
 | Todos los eventos críticos muestran un riesgo de $600.000 | Son eventos detectados antes de que el riesgo se calculara según cada caso, y no se recalculan solos. Reinicia `npm run dev` y presiona **Reiniciar sandbox**. |
 | La interfaz dice "falta GEMINI_TRATAMIENTO_AUTORIZADO=si" aunque ya lo pusiste | El servidor se inició antes del cambio. Reinicia `npm run dev`. |
 | `npm run test:gemini` dice "skipped" | Sin clave: no hay clave en el `.env` o no se guardó. Con el motivo "cuota … agotada": se acabaron las 20 solicitudes diarias del plan gratuito (ver el punto siguiente). |

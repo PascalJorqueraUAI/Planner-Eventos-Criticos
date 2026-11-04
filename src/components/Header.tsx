@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { AlertTriangle, Database, Radar, Users, BarChart3, RotateCcw, Info } from 'lucide-react';
-import type { InfoSandbox, Metricas } from '../domain/types.js';
+import { AlertTriangle, Database, Radar, Users, BarChart3, RotateCcw, Info, Mail, LogOut } from 'lucide-react';
+import type { EstadoSistema } from '../domain/types.js';
+import { CampanaNotificaciones } from './Notificaciones.js';
 import { clp, fecha } from './ui.js';
 
 export type Modulo = 'repositorio' | 'detector' | 'asignacion' | 'dashboard';
@@ -12,15 +13,29 @@ const MODULOS: { id: Modulo; nombre: string; icono: React.ReactNode }[] = [
   { id: 'dashboard', nombre: 'Trazabilidad', icono: <BarChart3 className="w-4 h-4" /> },
 ];
 
+const TONO_NIVEL = { 1: 'bg-amber-500/15 text-amber-200', 2: 'bg-indigo-500/15 text-indigo-200', 3: 'bg-slate-800 text-slate-300' };
+
 interface HeaderProps {
   activo: Modulo;
   onCambiar: (m: Modulo) => void;
-  metricas: Metricas;
-  sandbox: InfoSandbox;
+  estado: EstadoSistema;
   onReiniciar: (escenario: string) => void;
+  onLeerNotificaciones: (ids?: string[]) => void;
+  onAbrirCorreo: (id: string | null) => void;
+  onCerrarSesion: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ activo, onCambiar, metricas, sandbox, onReiniciar }) => {
+export const Header: React.FC<HeaderProps> = ({
+  activo,
+  onCambiar,
+  estado,
+  onReiniciar,
+  onLeerNotificaciones,
+  onAbrirCorreo,
+  onCerrarSesion,
+}) => {
+  const { metricas, sandbox, sesion } = estado;
+  const puedeReiniciar = sesion.permisos.reiniciar_sandbox;
   const [escenario, setEscenario] = useState(sandbox.escenario_configurado);
   const contadores: Partial<Record<Modulo, number>> = {
     detector: metricas.eventos_abiertos,
@@ -29,7 +44,7 @@ export const Header: React.FC<HeaderProps> = ({ activo, onCambiar, metricas, san
 
   return (
     <header className="border-b border-slate-800/80 bg-slate-950/85 backdrop-blur-xl sticky top-0 z-40">
-      {sandbox.desactualizado && (
+      {sandbox.desactualizado && puedeReiniciar && (
         <div className="bg-sky-900/90 text-sky-50 px-4 py-2 border-b border-sky-700">
           <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm">
             <span className="flex items-center gap-2">
@@ -81,30 +96,67 @@ export const Header: React.FC<HeaderProps> = ({ activo, onCambiar, metricas, san
             <p className="text-[11px] text-slate-400">Coordinación Comercial–Judicial</p>
           </div>
         </div>
-        <div className="flex items-center gap-2 text-xs text-slate-400">
-          <label className="flex items-center gap-1.5">
-            Escenario
-            <select
-              value={escenario}
-              onChange={(e) => setEscenario(e.target.value)}
-              className="bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-slate-200"
-              title={`Cargado ahora: «${sandbox.escenario_cargado}»`}
+        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+          {puedeReiniciar && (
+            <>
+              <label className="flex items-center gap-1.5">
+                Escenario
+                <select
+                  value={escenario}
+                  onChange={(e) => setEscenario(e.target.value)}
+                  className="bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-slate-200"
+                  title={`Cargado ahora: «${sandbox.escenario_cargado}»`}
+                >
+                  {sandbox.escenarios.map((e) => (
+                    <option key={e} value={e}>
+                      {e}
+                      {e === sandbox.escenario_cargado ? ' (cargado)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                onClick={() => onReiniciar(escenario)}
+                className="hover:text-white flex items-center gap-1 cursor-pointer"
+                title="Recargar los datos del entorno de pruebas con el escenario elegido"
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> Reiniciar sandbox
+              </button>
+            </>
+          )}
+          <div className="flex items-center gap-1 sm:pl-3 sm:border-l border-slate-800">
+            <CampanaNotificaciones
+              notificaciones={estado.notificaciones}
+              sinLeer={estado.notificaciones_sin_leer}
+              ahora={estado.ahora}
+              onLeer={onLeerNotificaciones}
+              onVerCorreo={onAbrirCorreo}
+              onIrATarea={() => onCambiar('asignacion')}
+            />
+            <button
+              onClick={() => onAbrirCorreo(null)}
+              className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 cursor-pointer"
+              title="Bandeja de correos (simulada)"
+              aria-label="Bandeja de correos"
             >
-              {sandbox.escenarios.map((e) => (
-                <option key={e} value={e}>
-                  {e}
-                  {e === sandbox.escenario_cargado ? ' (cargado)' : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            onClick={() => onReiniciar(escenario)}
-            className="hover:text-white flex items-center gap-1 cursor-pointer"
-            title="Recargar los datos del entorno de pruebas con el escenario elegido"
-          >
-            <RotateCcw className="w-3.5 h-3.5" /> Reiniciar sandbox
-          </button>
+              <Mail className="w-4.5 h-4.5" />
+            </button>
+            <div className="text-right leading-tight pl-1">
+              <p className="text-slate-100 font-semibold">{sesion.usuario.nombre}</p>
+              <p className="flex items-center justify-end gap-1.5">
+                <span className="text-slate-500">{sesion.usuario.cargo}</span>
+                <span className={`text-[10px] font-bold px-1.5 rounded ${TONO_NIVEL[sesion.usuario.nivel]}`}>Nivel {sesion.usuario.nivel}</span>
+              </p>
+            </div>
+            <button
+              onClick={onCerrarSesion}
+              className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+              title="Cerrar sesión"
+              aria-label="Cerrar sesión"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 

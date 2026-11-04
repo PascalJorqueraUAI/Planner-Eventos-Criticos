@@ -35,16 +35,16 @@ from modelo.entidades import a_iso, desde_iso
 from modelo.repositorio import Repositorio
 
 MATRIZ_RACI: Dict[str, Dict[str, str]] = {
-    "VERIFICAR_PAGO":                {"Ejecutivo Comercial": "R", "Jefe Comercial": "A", "Ejecutivo Judicial": "I", "Jefe Judicial": "-"},
-    "ACLARAR_DISCREPANCIA":          {"Ejecutivo Comercial": "R", "Jefe Comercial": "A", "Ejecutivo Judicial": "I", "Jefe Judicial": "-"},
-    "REGISTRAR_PAGO_CRM":            {"Ejecutivo Comercial": "R", "Jefe Comercial": "A", "Ejecutivo Judicial": "-", "Jefe Judicial": "-"},
-    "CONTACTAR_DEUDOR":              {"Ejecutivo Comercial": "R", "Jefe Comercial": "A", "Ejecutivo Judicial": "C", "Jefe Judicial": "-"},
-    "GESTIONAR_REPACTACION":         {"Ejecutivo Comercial": "R", "Jefe Comercial": "A", "Ejecutivo Judicial": "C", "Jefe Judicial": "I"},
-    "EVALUAR_SUSPENSION":            {"Ejecutivo Comercial": "C", "Jefe Comercial": "I", "Ejecutivo Judicial": "R", "Jefe Judicial": "A"},
-    "EVALUAR_CURSO_CAUSA":           {"Ejecutivo Comercial": "C", "Jefe Comercial": "-", "Ejecutivo Judicial": "R", "Jefe Judicial": "A"},
-    "FORMALIZAR_SUSPENSION_TERMINO": {"Ejecutivo Comercial": "I", "Jefe Comercial": "I", "Ejecutivo Judicial": "R", "Jefe Judicial": "A"},
-    "CONFIRMAR_DILIGENCIA":          {"Ejecutivo Comercial": "C", "Jefe Comercial": "-", "Ejecutivo Judicial": "R", "Jefe Judicial": "A"},
-    "REACTIVAR_CAUSA":               {"Ejecutivo Comercial": "C", "Jefe Comercial": "I", "Ejecutivo Judicial": "R", "Jefe Judicial": "A"},
+    "VERIFICAR_PAGO":                {"Ejecutivo Comercial": "R", "Gerente Comercial": "A", "Ejecutivo Judicial": "I", "Gerente Judicial": "-"},
+    "ACLARAR_DISCREPANCIA":          {"Ejecutivo Comercial": "R", "Gerente Comercial": "A", "Ejecutivo Judicial": "I", "Gerente Judicial": "-"},
+    "REGISTRAR_PAGO_CRM":            {"Ejecutivo Comercial": "R", "Gerente Comercial": "A", "Ejecutivo Judicial": "-", "Gerente Judicial": "-"},
+    "CONTACTAR_DEUDOR":              {"Ejecutivo Comercial": "R", "Gerente Comercial": "A", "Ejecutivo Judicial": "C", "Gerente Judicial": "-"},
+    "GESTIONAR_REPACTACION":         {"Ejecutivo Comercial": "R", "Gerente Comercial": "A", "Ejecutivo Judicial": "C", "Gerente Judicial": "I"},
+    "EVALUAR_SUSPENSION":            {"Ejecutivo Comercial": "C", "Gerente Comercial": "I", "Ejecutivo Judicial": "R", "Gerente Judicial": "A"},
+    "EVALUAR_CURSO_CAUSA":           {"Ejecutivo Comercial": "C", "Gerente Comercial": "-", "Ejecutivo Judicial": "R", "Gerente Judicial": "A"},
+    "FORMALIZAR_SUSPENSION_TERMINO": {"Ejecutivo Comercial": "I", "Gerente Comercial": "I", "Ejecutivo Judicial": "R", "Gerente Judicial": "A"},
+    "CONFIRMAR_DILIGENCIA":          {"Ejecutivo Comercial": "C", "Gerente Comercial": "-", "Ejecutivo Judicial": "R", "Gerente Judicial": "A"},
+    "REACTIVAR_CAUSA":               {"Ejecutivo Comercial": "C", "Gerente Comercial": "I", "Ejecutivo Judicial": "R", "Gerente Judicial": "A"},
 }
 
 PESOS = {
@@ -285,8 +285,8 @@ def asignar_lote(
             }
             detalle = f"{t['titulo']} → {elegido['nombre']} (puntaje {total:.2f})."
         else:
-            jefe = asignar_a_jefatura(repo, t, "Escalada a jefatura: ningún colaborador factible", evaluacion)
-            detalle = f"{t['titulo']} → escalada a {jefe['nombre'] if jefe else 'jefatura'} (sin colaborador factible)."
+            jefe = asignar_a_jefatura(repo, t, "Escalada a la gerencia del área: ningún colaborador factible", evaluacion)
+            detalle = f"{t['titulo']} → escalada a {jefe['nombre'] if jefe else 'la gerencia del área'} (sin colaborador factible)."
 
         repo.registrar_historial(
             usuario=usuario,
@@ -363,7 +363,7 @@ def resolver_raci(repo: Repositorio, tarea: Dict[str, Any], caso: Dict[str, Any]
     for cargo, letra in MATRIZ_RACI[tarea["tipo"]].items():
         if letra not in ("A", "C", "I"):
             continue
-        if cargo.startswith("Jefe"):
+        if cargo.startswith("Gerente"):
             personas = [c["id"] for c in repo.filtrar("colaboradores", cargo=cargo)]
         else:
             area = cargo.split()[-1]

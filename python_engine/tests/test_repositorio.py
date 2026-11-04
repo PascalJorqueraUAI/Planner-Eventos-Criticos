@@ -2,6 +2,7 @@ import os
 import tempfile
 import unittest
 
+from modelo.repositorio import COLECCIONES
 from tests.utilidades import AHORA, servicio_de_prueba
 
 
@@ -31,8 +32,10 @@ class TestRepositorioCentralizado(unittest.TestCase):
     def test_exportar_una_hoja_csv_por_coleccion(self):
         with tempfile.TemporaryDirectory() as directorio:
             archivos = self.repo.exportar_csv(directorio)
-            self.assertEqual(len(archivos), 8)
+            self.assertEqual(len(archivos), len(COLECCIONES))
             self.assertTrue(all(os.path.exists(a) for a in archivos))
+            with open(os.path.join(directorio, "Cobgestion_usuarios.csv"), encoding="utf-8-sig") as f:
+                self.assertNotIn("clave_hash", f.read())
 
     def test_actualizacion_desde_crm_dispara_deteccion(self):
         respuesta = self.servicio.actualizar_caso(

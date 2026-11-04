@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict
 
 from modelo.entidades import AvisoPago, Caso, Colaborador, RegistroDesempeno, a_iso
+from modelo.usuarios import GERENCIA_GENERAL, crear_usuarios
 
 # (tareas atendidas, tasa de cumplimiento de SLA, horas promedio) por tipo de tarea.
 PERFILES = {
@@ -85,7 +86,7 @@ def _colaboradores(ahora: datetime):
                     list(PERFILES["COL-0002"]), capacidad_max=5, tareas_externas=2),
         Colaborador("COL-0003", "Fernanda Soto", "Comercial", "Ejecutivo Comercial",
                     list(PERFILES["COL-0003"]), capacidad_max=4, tareas_externas=1),
-        Colaborador("COL-0004", "Patricia Lagos", "Comercial", "Jefe Comercial",
+        Colaborador("COL-0004", "Patricia Lagos", "Comercial", "Gerente Comercial",
                     TIPOS_COMERCIALES, capacidad_max=3),
         Colaborador("COL-0005", "Abg. Rodrigo Morales", "Judicial", "Ejecutivo Judicial",
                     list(PERFILES["COL-0005"]), capacidad_max=6, tareas_externas=4,
@@ -94,7 +95,7 @@ def _colaboradores(ahora: datetime):
                     list(PERFILES["COL-0006"]), capacidad_max=5, tareas_externas=2),
         Colaborador("COL-0007", "Abg. Matías Herrera", "Judicial", "Ejecutivo Judicial",
                     list(PERFILES["COL-0007"]), capacidad_max=4, tareas_externas=1),
-        Colaborador("COL-0008", "Abg. Andrés Fuentes", "Judicial", "Jefe Judicial",
+        Colaborador("COL-0008", "Abg. Andrés Fuentes", "Judicial", "Gerente Judicial",
                     TIPOS_JUDICIALES, capacidad_max=3),
     ]
 
@@ -432,11 +433,15 @@ def crear_datos_iniciales(ahora: datetime, escenario: str = ESCENARIO_POR_DEFECT
         "historial_desempeno": [asdict(r) for r in desempeno],
         "historial": [],
         "tratamientos": [],
+        "usuarios": crear_usuarios([asdict(c) for c in colaboradores]),
+        "notificaciones": [],
+        "correos": [],
         "meta": {
             "contadores": {
                 "casos": ultimo(c.id for c in casos),
                 "avisos": ultimo(a.id for a in avisos),
                 "colaboradores": len(colaboradores),
+                "usuarios": len(colaboradores) + len(GERENCIA_GENERAL),
             },
             "cargado_en": a_iso(ahora),
             "ultimo_escaneo": None,
