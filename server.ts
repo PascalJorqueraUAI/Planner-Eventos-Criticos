@@ -5,11 +5,16 @@
  * y a los sistemas actuales de Cobgestion (CRM, correo, planillas de mandantes).
  * Cada request se traduce en un comando de python_engine/cli.py; las llamadas se
  * encolan para que el repositorio nunca reciba dos escrituras simultáneas.
+ *
+ * Acceso: las personas inician sesión (cookie firmada, HttpOnly) y los sistemas externos
+ * usan la clave de servicio COBGESTION_API_KEY (cabecera X-API-Key). El servidor solo
+ * identifica a quién llama; qué puede hacer lo decide el motor (controlador/permisos.py).
  */
 import express, { type Request, type Response } from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { spawn } from 'child_process';
+import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -24,6 +29,8 @@ const pythonCommand = process.platform === 'win32' ? 'py' : 'python3';
 const pythonArgs = process.platform === 'win32' ? ['-3'] : [];
 
 class ErrorNegocio extends Error {}
+class ErrorPermiso extends Error {}
+class ErrorSesion extends Error {}
 
 function ejecutarPython(comando: string, datos: Record<string, unknown> = {}): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -43,7 +50,7 @@ function ejecutarPython(comando: string, datos: Record<string, unknown> = {}): P
       try {
         const respuesta = JSON.parse(salida.trim());
         if (respuesta.ok) resolve(respuesta.datos);
-        else reject(new ErrorNegocio(respuesta.error));
+        else reject(respuesta.prohibido ? new ErrorPermiso(respuesta.error) : new ErrorNegocio(respuesta.error));
       } catch {
         reject(new Error(errores || salida || 'El motor Python no devolvió JSON'));
       }
@@ -60,108 +67,147 @@ function motor(comando: string, datos: Record<string, unknown> = {}): Promise<an
   return siguiente;
 }
 
-function ruta(handler: (req: Request) => Promise<unknown>) {
+// ---------------- Sesiones ---------------- //
+const COOKIE_SESION = 'cobgestion_sesion';
+const DURACION_SESION_MS = 8 * 60 * 60 * 1000; // una jornada
+// Sin SESSION_SECRET se genera uno al iniciar: reiniciar el servidor cierra todas las sesiones.
+const SECRETO_SESION = process.env.SESSION_SECRET || randomBytes(32).toString('hex');
+const CLAVE_INTEGRACION = process.env.COBGESTION_API_KEY || '';
+
+const firmar = (contenido: string) => createHmac('sha256', SECRETO_SESION).update(contenido).digest('base64url');
+
+function crearSesion(res: Response, usuarioId: string) {
+  const contenido = Buffer.from(JSON.stringify({ uid: usuarioId, exp: Date.now() + DURACION_SESION_MS })).toString('base64url');
+  res.setHeader(
+    'Set-Cookie',
+    `${COOKIE_SESION}=${contenido}.${firmar(contenido)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${DURACION_SESION_MS / 1000}`,
+  );
+}
+
+function leerCookie(req: Request, nombre: string): string | undefined {
+  const par = (req.headers.cookie ?? '').split(';').map((c) => c.trim()).find((c) => c.startsWith(`${nombre}=`));
+  return par?.slice(nombre.length + 1);
+}
+
+const iguales = (a: string, b: string) => {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
+};
+
+/** Quién hace la solicitud: el id de usuario de la sesión, o "integracion" con la clave de servicio. */
+function actor(req: Request): string {
+  const clave = req.header('X-API-Key');
+  if (clave && CLAVE_INTEGRACION && iguales(clave, CLAVE_INTEGRACION)) return 'integracion';
+  const cookie = leerCookie(req, COOKIE_SESION);
+  const [contenido, firma] = cookie?.split('.') ?? [];
+  if (contenido && firma && iguales(firma, firmar(contenido))) {
+    const { uid, exp } = JSON.parse(Buffer.from(contenido, 'base64url').toString('utf8'));
+    if (typeof uid === 'string' && Date.now() < exp) return uid;
+  }
+  throw new ErrorSesion('Inicie sesión para continuar');
+}
+
+function ruta(handler: (req: Request, res: Response) => Promise<unknown>) {
   return async (req: Request, res: Response) => {
     try {
-      res.json(await handler(req));
+      res.json(await handler(req, res));
     } catch (err: any) {
-      res.status(err instanceof ErrorNegocio ? 400 : 500).json({ error: err.message });
+      const estado = err instanceof ErrorSesion ? 401 : err instanceof ErrorPermiso ? 403 : err instanceof ErrorNegocio ? 400 : 500;
+      res.status(estado).json({ error: err.message });
     }
   };
 }
 
-const usuario = (req: Request, porDefecto: string) =>
-  (req.body?.usuario as string) || (req.header('X-Usuario') as string) || porDefecto;
+/** Comando del motor a nombre de quien llama. `usuario` solo lo usa una integración para decir qué sistema es. */
+const comoActor = (req: Request, comando: string, datos: Record<string, unknown> = {}, sistema?: string) =>
+  motor(comando, { ...datos, actor: actor(req), usuario: (req.body?.usuario as string) || sistema });
+
+app.post(
+  '/api/v1/sesion',
+  ruta(async (req, res) => {
+    const usuario = await motor('login', { email: req.body?.email, clave: req.body?.clave });
+    crearSesion(res, usuario.id);
+    return usuario;
+  }),
+);
+app.get('/api/v1/sesion', ruta((req) => comoActor(req, 'sesion')));
+app.delete(
+  '/api/v1/sesion',
+  ruta(async (_req, res) => {
+    res.setHeader('Set-Cookie', `${COOKIE_SESION}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+    return { ok: true };
+  }),
+);
+// Cuentas del sandbox para entrar con un clic (solo en modo demo).
+app.get('/api/v1/sesion/demo', ruta(() => motor('usuarios-demo')));
 
 // ---------------- Repositorio centralizado ---------------- //
-app.get('/api/v1/estado', ruta(() => motor('estado')));
-app.get('/api/v1/casos', ruta(async () => (await motor('estado')).casos));
-app.get('/api/v1/casos/:id', ruta((req) => motor('caso', { caso_id: req.params.id })));
+app.get('/api/v1/estado', ruta((req) => comoActor(req, 'estado')));
+app.get('/api/v1/casos', ruta(async (req) => (await comoActor(req, 'estado')).casos));
+app.get('/api/v1/casos/:id', ruta((req) => comoActor(req, 'caso', { caso_id: req.params.id })));
 
-// Integración: el CRM informa un cambio en un caso.
+// Integración: el CRM informa un cambio en un caso (o una persona lo edita desde la interfaz).
 app.patch(
   '/api/v1/casos/:id',
-  ruta((req) =>
-    motor('actualizar-caso', {
-      caso_id: req.params.id,
-      cambios: req.body.cambios ?? req.body,
-      usuario: usuario(req, 'Integración CRM'),
-    }),
-  ),
+  ruta((req) => comoActor(req, 'actualizar-caso', { caso_id: req.params.id, cambios: req.body.cambios ?? req.body }, 'Integración CRM')),
 );
 
 // Integración: comprobante no estructurado ya extraído (WhatsApp, correo, aviso bancario).
-app.post(
-  '/api/v1/avisos',
-  ruta((req) => motor('ingresar-aviso', { aviso: req.body.aviso ?? req.body, usuario: usuario(req, 'Ingesta de comprobantes') })),
-);
+app.post('/api/v1/avisos', ruta((req) => comoActor(req, 'ingresar-aviso', { aviso: req.body.aviso ?? req.body }, 'Ingesta de comprobantes')));
 
 // Integración: planilla estructurada de un mandante.
 app.post(
   '/api/v1/planillas-mandante',
-  ruta((req) => motor('conciliar-planilla', { registros: req.body.registros, usuario: usuario(req, 'Planilla mandante') })),
+  ruta((req) => comoActor(req, 'conciliar-planilla', { registros: req.body.registros }, 'Planilla mandante')),
 );
 
 // Un caso nuevo ingresado a mano (con comprobante inicial opcional): responde con sus eventos y asignaciones.
 app.post(
   '/api/v1/casos',
-  ruta((req) =>
-    motor('crear-caso', {
-      caso: req.body.caso,
-      comprobante: req.body.comprobante ?? null,
-      usuario: usuario(req, 'Ingreso manual de casos'),
-    }),
-  ),
+  ruta((req) => comoActor(req, 'crear-caso', { caso: req.body.caso, comprobante: req.body.comprobante ?? null }, 'Ingreso manual de casos')),
 );
 
 // Integración: carga de casos desde un CSV del CRM o de una planilla (con validación previa opcional).
 app.post(
   '/api/v1/importar-casos',
   ruta((req) =>
-    motor('importar-casos', {
-      csv: req.body.csv,
-      mapeo: req.body.mapeo,
-      solo_validar: Boolean(req.body.solo_validar),
-      usuario: usuario(req, 'Importación de casos'),
-    }),
+    comoActor(
+      req,
+      'importar-casos',
+      { csv: req.body.csv, mapeo: req.body.mapeo, solo_validar: Boolean(req.body.solo_validar) },
+      'Importación de casos',
+    ),
   ),
 );
 
-app.post('/api/v1/exportar', ruta(() => motor('exportar')));
-app.post('/api/v1/reiniciar', ruta((req) => motor('reiniciar', { escenario: req.body?.escenario })));
+app.post('/api/v1/exportar', ruta((req) => comoActor(req, 'exportar')));
+app.post('/api/v1/reiniciar', ruta((req) => comoActor(req, 'reiniciar', { escenario: req.body?.escenario })));
 
 // ---------------- Detector de eventos críticos ---------------- //
-app.get('/api/v1/eventos', ruta(async () => (await motor('estado')).eventos));
-app.post('/api/v1/detector/escanear', ruta(() => motor('escanear')));
+app.get('/api/v1/eventos', ruta(async (req) => (await comoActor(req, 'estado')).eventos));
+app.post('/api/v1/detector/escanear', ruta((req) => comoActor(req, 'escanear')));
 
 // ---------------- Asignación y seguimiento ---------------- //
-app.get('/api/v1/tareas', ruta(async () => (await motor('estado')).tareas));
+app.get('/api/v1/tareas', ruta(async (req) => (await comoActor(req, 'estado')).tareas));
 app.post(
   '/api/v1/tareas/:id/atender',
   ruta((req) =>
-    motor('atender-tarea', {
-      tarea_id: req.params.id,
-      resultado: req.body.resultado,
-      notas: req.body.notas ?? '',
-      usuario: usuario(req, 'Responsable'),
-    }),
+    comoActor(req, 'atender-tarea', { tarea_id: req.params.id, resultado: req.body.resultado, notas: req.body.notas ?? '' }),
   ),
 );
 app.post(
   '/api/v1/tareas/:id/reasignar',
-  ruta((req) =>
-    motor('reasignar-tarea', { tarea_id: req.params.id, motivo: req.body.motivo ?? '', usuario: usuario(req, 'Jefatura') }),
-  ),
+  ruta((req) => comoActor(req, 'reasignar-tarea', { tarea_id: req.params.id, motivo: req.body.motivo ?? '' })),
 );
-app.get('/api/v1/colaboradores', ruta(async () => (await motor('estado')).colaboradores));
+app.get('/api/v1/colaboradores', ruta(async (req) => (await comoActor(req, 'estado')).colaboradores));
 app.patch(
   '/api/v1/colaboradores/:id/disponibilidad',
   ruta((req) =>
-    motor('disponibilidad', {
+    comoActor(req, 'disponibilidad', {
       colaborador_id: req.params.id,
       disponible: Boolean(req.body.disponible),
       motivo: req.body.motivo ?? '',
-      usuario: usuario(req, 'Jefatura'),
     }),
   ),
 );
@@ -170,18 +216,22 @@ app.patch(
 app.post(
   '/api/v1/colaboradores/:id/ausencias',
   ruta((req) =>
-    motor('registrar-ausencia', {
-      colaborador_id: req.params.id,
-      desde: req.body.desde,
-      hasta: req.body.hasta,
-      motivo: req.body.motivo ?? '',
-      usuario: usuario(req, 'Calendario RR.HH.'),
-    }),
+    comoActor(
+      req,
+      'registrar-ausencia',
+      { colaborador_id: req.params.id, desde: req.body.desde, hasta: req.body.hasta, motivo: req.body.motivo ?? '' },
+      'Calendario RR.HH.',
+    ),
   ),
 );
 
+// ---------------- Notificaciones ---------------- //
+// Sin `ids` marca todas las del usuario como leídas.
+app.post('/api/v1/notificaciones/leer', ruta((req) => comoActor(req, 'leer-notificaciones', { ids: req.body?.ids ?? null })));
+app.get('/api/v1/correos', ruta(async (req) => (await comoActor(req, 'estado')).correos));
+
 // ---------------- Dashboard de trazabilidad ---------------- //
-app.get('/api/v1/metricas', ruta(async () => (await motor('estado')).metricas));
+app.get('/api/v1/metricas', ruta(async (req) => (await comoActor(req, 'estado')).metricas));
 
 // ---------------- Extracción de comprobantes (complementaria al registro) ---------------- //
 // Corre fuera de la cola: Gemini puede tardar segundos y la extracción solo lee el repositorio.
@@ -190,14 +240,15 @@ app.post(
   '/api/v1/extraer-comprobante',
   ruta(async (req) => {
     const { texto, imagen_base64, mime_type, confirmacion_operador } = req.body;
+    const quien = actor(req);
     const { datos, tratamiento } = await ejecutarPython('extraer-comprobante', {
       texto,
       imagen_base64,
       mime_type,
       confirmacion_operador,
-      usuario: usuario(req, 'Operador de ingesta'),
+      actor: quien,
     });
-    if (tratamiento) await motor('registrar-tratamiento', { tratamiento });
+    if (tratamiento) await motor('registrar-tratamiento', { tratamiento, actor: quien });
     return datos;
   }),
 );

@@ -300,7 +300,7 @@ def escalar_vencidas(repo: Repositorio, ahora: datetime) -> List[Dict[str, Any]]
         if t.get("nivel_escalamiento", 0) == 1 and t not in primer_nivel and ahora > plazo_vigente(t):
             _registrar_desempeno(repo, t, ahora, cumplio=False)
             anterior = t["responsable_id"]
-            jefe = asignar_a_jefatura(repo, t, "Escalada a jefatura: venció también el plazo tras la reasignación")
+            jefe = asignar_a_jefatura(repo, t, "Escalada a la gerencia del área: venció también el plazo tras la reasignación")
             t.update({
                 "nivel_escalamiento": 2,
                 "plazo_escalamiento": a_iso(ahora + ventana_escalamiento(t)),
@@ -311,8 +311,8 @@ def escalar_vencidas(repo: Repositorio, ahora: datetime) -> List[Dict[str, Any]]
             repo.registrar_historial(
                 usuario=USUARIO_ESCALAMIENTO,
                 area="Sistema",
-                accion="Tarea escalada a jefatura",
-                detalle=f"{t['titulo']}: {anterior} → {jefe['nombre'] if jefe else 'jefatura'}. Vencieron el SLA y el plazo de reasignación.",
+                accion="Tarea escalada a la gerencia del área",
+                detalle=f"{t['titulo']}: {anterior} → {jefe['nombre'] if jefe else 'la gerencia del área'}. Vencieron el SLA y el plazo de reasignación.",
                 entidad="Tarea",
                 entidad_id=t["id"],
                 caso_id=t["caso_id"],

@@ -28,7 +28,13 @@ COLECCIONES = (
     "historial_desempeno",
     "historial",
     "tratamientos",
+    "usuarios",
+    "notificaciones",
+    "correos",
 )
+
+# Nunca salen del sistema en una exportación.
+CAMPOS_NO_EXPORTABLES = ("clave_hash",)
 
 # Prefijo de id usado por cada colección.
 PREFIJOS = {
@@ -39,6 +45,9 @@ PREFIJOS = {
     "colaboradores": "COL",
     "historial": "LOG",
     "tratamientos": "TRT",
+    "usuarios": "USR",
+    "notificaciones": "NTF",
+    "correos": "MAIL",
 }
 
 
@@ -175,7 +184,7 @@ class Repositorio:
         for coleccion in COLECCIONES:
             registros = self.datos[coleccion]
             ruta = os.path.join(directorio, f"Cobgestion_{coleccion}.csv")
-            columnas = list(registros[0].keys()) if registros else []
+            columnas = [c for c in (registros[0].keys() if registros else []) if c not in CAMPOS_NO_EXPORTABLES]
             with open(ruta, "w", newline="", encoding="utf-8-sig") as f:
                 writer = csv.writer(f, delimiter=";")
                 writer.writerow(columnas)

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Database, FileSpreadsheet, Upload, Download, History, RefreshCw, Car, FilePlus2 } from 'lucide-react';
+import { Database, FileSpreadsheet, Upload, Download, History, RefreshCw, Car, FilePlus2, Lock } from 'lucide-react';
 import { api, type Ejecutar } from '../api.js';
 import type { EstadoSistema } from '../domain/types.js';
 import { IngresoComprobanteModal } from './IngresoComprobanteModal.js';
@@ -32,9 +32,10 @@ export const RepositorioView: React.FC<Props> = ({ estado, ejecutar, irAAsignaci
     [estado.colaboradores],
   );
   const caso = estado.casos.find((c) => c.id === seleccionado);
+  const { permisos } = estado.sesion;
 
   const conciliar = async () => {
-    const r = await ejecutar(() => api.conciliarPlanilla(PLANILLA_EJEMPLO, 'Planilla mandante'), 'Planilla conciliada');
+    const r = await ejecutar(() => api.conciliarPlanilla(PLANILLA_EJEMPLO), 'Planilla conciliada');
     setResultadoPlanilla(r.conciliacion);
   };
 
@@ -53,23 +54,37 @@ export const RepositorioView: React.FC<Props> = ({ estado, ejecutar, irAAsignaci
           subtitulo="Planilla única con el estado actual de cada caso, sus últimas actualizaciones y el historial de cambios. Se alimenta del CRM, de los comprobantes y de las planillas de mandantes."
           acciones={
             <>
-              <Boton variante="primario" onClick={() => setNuevoCasoAbierto(true)}>
-                <FilePlus2 className="w-4 h-4" /> Nuevo caso
-              </Boton>
+              {permisos.crear_casos && (
+                <Boton variante="primario" onClick={() => setNuevoCasoAbierto(true)}>
+                  <FilePlus2 className="w-4 h-4" /> Nuevo caso
+                </Boton>
+              )}
               <Boton variante="primario" onClick={() => setModalAbierto(true)}>
                 <Upload className="w-4 h-4" /> Registrar comprobante
               </Boton>
-              <Boton onClick={() => setPlanillaAbierta((v) => !v)}>
-                <FileSpreadsheet className="w-4 h-4" /> Planilla de mandante
-              </Boton>
-              <Boton onClick={exportar}>
-                <Download className="w-4 h-4" /> Exportar a Excel
-              </Boton>
+              {permisos.conciliar_planillas && (
+                <Boton onClick={() => setPlanillaAbierta((v) => !v)}>
+                  <FileSpreadsheet className="w-4 h-4" /> Planilla de mandante
+                </Boton>
+              )}
+              {permisos.exportar && (
+                <Boton onClick={exportar}>
+                  <Download className="w-4 h-4" /> Exportar a Excel
+                </Boton>
+              )}
             </>
           }
         />
 
-        {planillaAbierta && (
+        {estado.sesion.usuario.nivel === 3 && (
+          <p className="px-4 py-2 border-b border-slate-800 text-[11px] text-slate-400 flex items-center gap-1.5">
+            <Lock className="w-3.5 h-3.5 shrink-0" />
+            Ves todos los casos para coordinarte con el equipo. En los que no llevas, los datos personales del deudor (nombre,
+            RUT, contacto y patente) aparecen ocultos, según la Ley 21.719.
+          </p>
+        )}
+
+        {planillaAbierta && permisos.conciliar_planillas && (
           <div className="p-4 border-b border-slate-800 bg-slate-950/50 text-xs space-y-3">
             <p className="text-slate-300">
               Planilla estructurada recibida de los mandantes. Se cruza por N° de operación o RUT + monto contra los avisos
@@ -145,6 +160,7 @@ export const RepositorioView: React.FC<Props> = ({ estado, ejecutar, irAAsignaci
                       <p className="text-slate-200 flex items-center gap-1">
                         {c.bien_garantia.tipo === 'Vehículo' && <Car className="w-3.5 h-3.5 text-amber-400" />}
                         {c.deudor.nombre}
+                        {c.restringido && <Lock className="w-3 h-3 text-slate-500" aria-label="Datos personales ocultos" />}
                       </p>
                       <p className="text-slate-500">{c.mandante}</p>
                     </td>
@@ -212,14 +228,16 @@ const DetalleCaso: React.FC<{
   const avisos = estado.avisos.filter((a) => a.caso_id === casoId);
   const historial = estado.historial.filter((h) => h.caso_id === casoId);
 
+  const editables = new Set(caso.campos_editables);
   const enviar = () => {
     const cambios: Record<string, unknown> = {};
     if (form.estado_comercial !== caso.estado_comercial) cambios.estado_comercial = form.estado_comercial;
     if (form.estado_judicial !== caso.estado_judicial) cambios.estado_judicial = form.estado_judicial;
     const diligencia = form.fecha_diligencia ? `${form.fecha_diligencia}:00` : null;
     if (diligencia !== caso.fecha_diligencia) cambios.fecha_diligencia = diligencia;
+    for (const campo of Object.keys(cambios)) if (!editables.has(campo)) delete cambios[campo];
     if (Object.keys(cambios).length === 0) return;
-    ejecutar(() => api.actualizarCaso(casoId, cambios, 'Integración CRM'), `Caso ${casoId} actualizado vía API`);
+    ejecutar(() => api.actualizarCaso(casoId, cambios), `Caso ${casoId} actualizado`);
   };
 
   return (
@@ -238,6 +256,11 @@ const DetalleCaso: React.FC<{
             {caso.bien_garantia.patente && ` (${caso.bien_garantia.patente})`}
           </p>
           {caso.fecha_diligencia && <p className="text-amber-300 mt-1">Diligencia: {fecha(caso.fecha_diligencia)}</p>}
+          {caso.restringido && (
+            <p className="text-slate-500 mt-1 flex items-center gap-1.5">
+              <Lock className="w-3.5 h-3.5" /> No llevas este caso: los datos personales del deudor están ocultos.
+            </p>
+          )}
         </div>
 
         <div>
@@ -259,34 +282,50 @@ const DetalleCaso: React.FC<{
           </ul>
         </div>
 
-        <div className="border-t border-slate-800 pt-3 space-y-2">
-          <p className="font-semibold text-slate-200">Actualización desde el CRM (PATCH /api/v1/casos/{caso.id})</p>
-          <p className="text-slate-500">
-            Simula el cambio que enviaría el sistema actual de Cobgestion. El detector se ejecuta al recibirlo.
-          </p>
-          <select value={form.estado_comercial} onChange={(e) => setForm({ ...form, estado_comercial: e.target.value })} className={campo} aria-label="Estado comercial">
-            {estado.estados.comercial.map((s) => (
-              <option key={s}>{s}</option>
-            ))}
-          </select>
-          <select value={form.estado_judicial} onChange={(e) => setForm({ ...form, estado_judicial: e.target.value })} className={campo} aria-label="Estado judicial">
-            {estado.estados.judicial.map((s) => (
-              <option key={s}>{s}</option>
-            ))}
-          </select>
-          <label className="block text-slate-400">
-            Fecha de diligencia
-            <input
-              type="datetime-local"
-              value={form.fecha_diligencia}
-              onChange={(e) => setForm({ ...form, fecha_diligencia: e.target.value })}
-              className={`${campo} mt-1`}
-            />
-          </label>
-          <Boton variante="primario" className="w-full" onClick={enviar}>
-            Enviar actualización
-          </Boton>
-        </div>
+        {editables.size > 0 && (
+          <div className="border-t border-slate-800 pt-3 space-y-2">
+            <p className="font-semibold text-slate-200">Actualizar el caso (PATCH /api/v1/casos/{caso.id})</p>
+            <p className="text-slate-500">
+              Es el mismo cambio que enviaría el CRM de Cobgestion. El detector se ejecuta al recibirlo. Solo puedes modificar los
+              campos de tu área.
+            </p>
+            <select
+              value={form.estado_comercial}
+              onChange={(e) => setForm({ ...form, estado_comercial: e.target.value })}
+              className={campo}
+              aria-label="Estado comercial"
+              disabled={!editables.has('estado_comercial')}
+            >
+              {estado.estados.comercial.map((s) => (
+                <option key={s}>{s}</option>
+              ))}
+            </select>
+            <select
+              value={form.estado_judicial}
+              onChange={(e) => setForm({ ...form, estado_judicial: e.target.value })}
+              className={campo}
+              aria-label="Estado judicial"
+              disabled={!editables.has('estado_judicial')}
+            >
+              {estado.estados.judicial.map((s) => (
+                <option key={s}>{s}</option>
+              ))}
+            </select>
+            <label className="block text-slate-400">
+              Fecha de diligencia
+              <input
+                type="datetime-local"
+                value={form.fecha_diligencia}
+                onChange={(e) => setForm({ ...form, fecha_diligencia: e.target.value })}
+                className={`${campo} mt-1`}
+                disabled={!editables.has('fecha_diligencia')}
+              />
+            </label>
+            <Boton variante="primario" className="w-full" onClick={enviar}>
+              Enviar actualización
+            </Boton>
+          </div>
+        )}
       </Tarjeta>
 
       <Tarjeta className="lg:col-span-3">

@@ -138,26 +138,23 @@ export const IngresoComprobanteModal: React.FC<Props> = ({ casos, config, abiert
     try {
       await ejecutar(
         () =>
-          api.ingresarAviso(
-            {
-              caso_id: form.caso_id || undefined,
-              monto: Number(form.monto.replace(/\D/g, '')),
-              canal,
-              origen,
-              datos_extraidos: {
-                rut_depositante: form.rut_depositante || null,
-                numero_operacion: form.numero_operacion || null,
-                banco_origen: form.banco_origen || null,
-                nombre_depositante: form.nombre_depositante || null,
-                // Trazabilidad sin guardar el comprobante: con qué se extrajo y su huella.
-                motor_extraccion: extraccion?.motor_extraccion ?? 'manual',
-                hash_comprobante: extraccion?.hash_comprobante ?? null,
-                revisado_por_operador: true,
-              },
-              observaciones: extraccion ? `Datos extraídos (${extraccion.motor_extraccion}) y revisados por el operador.` : 'Ingresado a mano.',
+          api.ingresarAviso({
+            caso_id: form.caso_id || undefined,
+            monto: Number(form.monto.replace(/\D/g, '')),
+            canal,
+            origen,
+            datos_extraidos: {
+              rut_depositante: form.rut_depositante || null,
+              numero_operacion: form.numero_operacion || null,
+              banco_origen: form.banco_origen || null,
+              nombre_depositante: form.nombre_depositante || null,
+              // Trazabilidad sin guardar el comprobante: con qué se extrajo y su huella.
+              motor_extraccion: extraccion?.motor_extraccion ?? 'manual',
+              hash_comprobante: extraccion?.hash_comprobante ?? null,
+              revisado_por_operador: true,
             },
-            'Ingesta de comprobantes',
-          ),
+            observaciones: extraccion ? `Datos extraídos (${extraccion.motor_extraccion}) y revisados por el operador.` : 'Ingresado a mano.',
+          }),
         'Comprobante registrado en el repositorio',
       );
       setImagen(null);

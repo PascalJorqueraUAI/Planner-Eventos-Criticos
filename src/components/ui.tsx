@@ -111,6 +111,6 @@ export const Boton: React.FC<
 };
 
 export const campoBase =
-  'bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500';
+  'bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed';
 
 export const campo = `w-full ${campoBase}`;
