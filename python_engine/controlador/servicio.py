@@ -96,7 +96,6 @@ class Servicio:
                 **c,
                 "carga_actual": carga_actual(self.repo, c),
                 "historico": perfil_historico(self.repo, c["id"]),
-                "historico_por_tipo": {tipo: perfil_historico(self.repo, c["id"], tipo) for tipo in c["competencias"]},
             }
             for c in self.repo.listar("colaboradores")
         ]

@@ -254,8 +254,11 @@ app.post(
 );
 
 // ---------------- Vista (Vite / estáticos) ---------------- //
+// `npm start` sirve la Vista ya compilada (npm run build); `npm run dev` la compila al vuelo con Vite.
+const PRODUCCION = process.env.NODE_ENV === 'production' || process.argv.includes('--produccion');
+
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
+  if (!PRODUCCION) {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' });
     app.use(vite.middlewares);
   } else {

@@ -605,7 +605,7 @@ def _md_simulacion(s: Dict[str, Any], sens: Dict[str, Any]) -> str:
         f"| Tareas asignadas sin escalar | {_n(s['tareas_asignadas_sin_escalar_pct'])}% | — |",
         f"| Tareas reasignadas o escaladas por vencimiento | {s['tareas_reasignadas_o_escaladas_por_vencimiento']} | — |",
         f"| Cumplimiento de SLA | {_n(s['cumplimiento_sla_pct'])}% de {s['tareas_atendidas']} tareas atendidas | — |",
-        f"| Horas de atención (mediana / promedio) | {_n(s['horas_mediana_atencion'])} / {_n(s['horas_promedio_atencion'])} h | — |",
+        f"| Horas de atención en tiempo real (mediana / promedio) | {_n(s['horas_mediana_atencion'])} / {_n(s['horas_promedio_atencion'])} h | — |",
         f"| Eventos críticos con la tarea judicial dentro de su SLA crítico | {s['eventos_criticos_cubiertos_a_tiempo']} de {s['eventos_criticos']} ({_pesos(s['riesgo_cubierto_a_tiempo_clp'])} de {_pesos(s['riesgo_en_juego_clp'])} en costas) | Caso real: {_pesos(LINEA_BASE['costo_incautacion_indebida_clp'])} perdidos |",
         f"| Eventos creados / cerrados | {s['eventos_creados']} / {s['eventos_cerrados']} | — |",
         "",

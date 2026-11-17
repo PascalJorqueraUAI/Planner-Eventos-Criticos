@@ -1,8 +1,9 @@
 """Importador de casos desde una exportación del CRM o una planilla (CSV)."""
 
+import os
 import unittest
 
-from controlador.importador import CAMPOS, _monto, decodificar, leer_csv, plantilla_csv, rut_valido
+from controlador.importador import CAMPOS, _monto, decodificar, leer_csv, rut_valido
 from modelo.datos_iniciales import _rut
 from tests.utilidades import servicio_de_prueba
 
@@ -41,8 +42,10 @@ class TestValidaciones(unittest.TestCase):
     def test_decodifica_csv_guardado_por_excel_en_windows(self):
         self.assertEqual(decodificar("Notificación;Peña".encode("cp1252")), "Notificación;Peña")
 
-    def test_plantilla_tiene_todos_los_campos(self):
-        self.assertEqual(plantilla_csv().strip().split(";"), list(CAMPOS))
+    def test_plantilla_de_docs_tiene_todos_los_campos(self):
+        ruta = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "plantilla_carga_casos.csv")
+        with open(ruta, encoding="utf-8-sig") as f:
+            self.assertEqual(f.readline().strip().split(";"), list(CAMPOS))
 
 
 class TestImportacion(unittest.TestCase):

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Header, type Modulo } from './components/Header.js';
 import { RepositorioView } from './components/RepositorioView.js';
 import { DetectorView } from './components/DetectorView.js';

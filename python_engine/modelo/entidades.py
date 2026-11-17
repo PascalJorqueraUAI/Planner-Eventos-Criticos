@@ -12,10 +12,6 @@ from typing import Any, Dict, List, Optional
 
 # --- Catálogos de estados -------------------------------------------------------
 
-ESTADOS_PAGO = ("informado", "confirmado", "observado")
-ESTADOS_TAREA = ("Pendiente", "Atendida")
-ESTADOS_EVENTO = ("Abierto", "Cerrado")
-
 ESTADOS_COMERCIALES = (
     "En negociación",
     "Acuerdo vigente",
@@ -47,15 +43,6 @@ ESTADOS_JUDICIALES_APREMIO = (
 ESTADOS_JUDICIALES_CERRADOS = (
     "Suspendido formalmente en tribunal",
     "Terminado por pago",
-)
-
-AREAS = ("Comercial", "Judicial")
-
-CARGOS = (
-    "Ejecutivo Comercial",
-    "Gerente Comercial",
-    "Ejecutivo Judicial",
-    "Gerente Judicial",
 )
 
 # Niveles de acceso al sistema (ver controlador/permisos.py).

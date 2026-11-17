@@ -32,8 +32,20 @@ class TestHorasHabiles(unittest.TestCase):
         # 24 h hábiles = 2 jornadas de 9 h + 6 h.
         self.assertEqual(HABIL.sumar_horas(datetime(2026, 11, 16, 9, 0), 24), datetime(2026, 11, 18, 15, 0))
 
+    def test_horas_habiles_entre_dos_instantes(self):
+        # Viernes 17:00 → lunes 10:00: 1 h del viernes + 1 h del lunes.
+        self.assertEqual(HABIL.horas_entre(datetime(2026, 11, 13, 17, 0), datetime(2026, 11, 16, 10, 0)), 2)
+        # Pasando por el feriado del 8 de diciembre.
+        self.assertEqual(HABIL.horas_entre(datetime(2026, 12, 7, 16, 0), datetime(2026, 12, 9, 11, 0)), 4)
+        self.assertEqual(HABIL.horas_entre(datetime(2026, 11, 14, 10, 0), datetime(2026, 11, 15, 20, 0)), 0)
+
+    def test_horas_entre_es_la_inversa_de_sumar_horas(self):
+        desde = datetime(2026, 11, 12, 15, 30)
+        for horas in (0.5, 4, 8, 24, 48):
+            self.assertAlmostEqual(HABIL.horas_entre(desde, HABIL.sumar_horas(desde, horas)), horas)
+
     def test_horas_corridas(self):
-        self.assertEqual(Calendario.corrido().sumar_horas(datetime(2026, 11, 13, 17, 0), 4), datetime(2026, 11, 13, 21, 0))
+        self.assertEqual(Calendario(habil=False).sumar_horas(datetime(2026, 11, 13, 17, 0), 4), datetime(2026, 11, 13, 21, 0))
 
     def test_configuracion_desde_el_entorno(self):
         entorno = {"HORARIO_HABIL": "08:30-17:30", "FERIADOS_ADICIONALES": "2026-11-17", "PLAZOS_HABILES": "si"}
