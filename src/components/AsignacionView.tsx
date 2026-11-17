@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Users, Grid3x3, ChevronDown, ChevronUp, Shuffle, CheckCircle2, UserX, UserCheck, AlertTriangle, CalendarOff } from 'lucide-react';
+import { Users, Grid3x3, ChevronDown, ChevronUp, Shuffle, CheckCircle2, UserX, UserCheck, AlertTriangle, CalendarOff, CalendarClock } from 'lucide-react';
 import { api, type Ejecutar } from '../api.js';
 import type { Colaborador, EstadoSistema, Tarea } from '../domain/types.js';
 import { BadgeEstadoTarea, BadgePrioridad, Boton, Etiqueta, Tarjeta, TituloSeccion, campo, campoBase, fecha, relativo } from './ui.js';
@@ -74,6 +74,22 @@ export const AsignacionView: React.FC<Props> = ({ estado, ejecutar }) => {
               </p>
             </div>
           </div>
+          <p className="mx-4 mt-2 text-[11px] text-slate-400 flex items-start gap-1.5">
+            <CalendarClock className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>
+              {estado.calendario.habiles
+                ? `Plazos en horas hábiles: lunes a viernes de ${estado.calendario.horario.replace('-', ' a ')}, sin feriados de Chile. `
+                : 'Plazos en horas corridas. '}
+              Si el caso tiene una diligencia programada, el plazo vence a más tardar 2 h antes. Hora de Chile.
+              {estado.calendario.habiles && estado.calendario.proximos_feriados[0] && (
+                <span className="text-slate-500">
+                  {' '}
+                  Próximo feriado: {estado.calendario.proximos_feriados[0].nombre} (
+                  {estado.calendario.proximos_feriados[0].fecha.split('-').reverse().join('-')}).
+                </span>
+              )}
+            </span>
+          </p>
           <div className="px-4 pt-3 flex flex-wrap gap-2 text-xs">
             {(['pendientes', 'vencidas', 'atendidas', 'todas'] as Filtro[]).map((f) => (
               <button
@@ -222,7 +238,7 @@ const TarjetaTarea: React.FC<{
       <p className="font-bold text-white text-sm mt-2">{tarea.titulo}</p>
       <p className="text-slate-400 mt-0.5">{tarea.descripcion}</p>
       <p className="text-slate-500 mt-1">
-        {caso.id} · {caso.deudor.nombre} · SLA {tarea.sla_horas} h · vence {fecha(tarea.fecha_limite)}
+        {caso.id} · {caso.deudor.nombre} · SLA {tarea.plazo_detalle || `${tarea.sla_horas} h`} · vence {fecha(tarea.fecha_limite)}
         {tarea.estado === 'Pendiente' && ` (${relativo(tarea.fecha_limite, estado.ahora)})`}
       </p>
       {tarea.estado === 'Pendiente' && tarea.plazo_escalamiento && (

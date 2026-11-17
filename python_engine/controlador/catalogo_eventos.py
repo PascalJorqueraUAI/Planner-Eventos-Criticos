@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from controlador.calendario import calendario
 from controlador.riesgo import estimar_riesgo
 from modelo.entidades import (
     ESTADOS_JUDICIALES_APREMIO,
@@ -23,6 +24,8 @@ from modelo.entidades import (
 )
 
 HORAS_DILIGENCIA_INMINENTE = 72
+# Un plazo nunca vence después de la diligencia: debe quedar tiempo para suspenderla.
+HORAS_ANTES_DE_DILIGENCIA = 2
 
 
 @dataclass
@@ -315,9 +318,23 @@ def redactar(texto: str, ctx: Contexto) -> str:
     )
 
 
-def plazo(plantilla: PlantillaTarea, prioridad: str, ahora: datetime) -> Tuple[int, datetime]:
+def plazo(plantilla: PlantillaTarea, prioridad: str, ahora: datetime,
+          caso: Optional[Dict[str, Any]] = None) -> Tuple[int, datetime, str]:
+    """
+    SLA de la tarea en horas hábiles (ver controlador/calendario.py). Si el caso tiene una
+    diligencia programada antes de ese vencimiento, el plazo se adelanta a 2 h antes de ella:
+    un comprobante del viernes en la tarde no puede esperar al martes si el receptor va el lunes.
+    """
     horas = plantilla.sla_horas_critica if prioridad == "CRITICA" else plantilla.sla_horas
-    return horas, ahora + timedelta(hours=horas)
+    cal = calendario()
+    limite, detalle = cal.sumar_horas(ahora, horas), cal.describir(horas)
+    if caso and caso.get("fecha_diligencia"):
+        diligencia = desde_iso(caso["fecha_diligencia"])
+        tope = max(diligencia - timedelta(hours=HORAS_ANTES_DE_DILIGENCIA), ahora + timedelta(hours=1))
+        if ahora < diligencia and tope < limite:
+            limite = tope
+            detalle = f"{detalle}, adelantado a {HORAS_ANTES_DE_DILIGENCIA} h antes de la diligencia"
+    return horas, limite, detalle
 
 
 def catalogo_serializado() -> List[Dict[str, Any]]:

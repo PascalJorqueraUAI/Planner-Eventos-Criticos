@@ -136,7 +136,7 @@ export const DetectorView: React.FC<Props> = ({ estado, ejecutar, irATareas }) =
                       <p key={t.tipo} className="text-slate-300">
                         <Etiqueta tono={t.area === 'Judicial' ? 'indigo' : 'emerald'}>{t.area}</Etiqueta> {t.titulo}{' '}
                         <span className="text-slate-500">
-                          ({t.sla_horas} h / {t.sla_horas_critica} h)
+                          ({t.sla_horas} h / {t.sla_horas_critica} h{estado.calendario.habiles ? ' hábiles' : ''})
                         </span>
                       </p>
                     ))}

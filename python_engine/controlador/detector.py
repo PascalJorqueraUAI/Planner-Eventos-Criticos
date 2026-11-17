@@ -85,7 +85,7 @@ def _crear_evento(repo: Repositorio, regla: ReglaEvento, ctx: Contexto, clave: s
 
     tareas = []
     for plantilla in regla.tareas:
-        sla_horas, limite = plazo(plantilla, prioridad, ctx.ahora)
+        sla_horas, limite, detalle_plazo = plazo(plantilla, prioridad, ctx.ahora, ctx.caso)
         tareas.append(repo.insertar("tareas", Tarea(
             id=repo.siguiente_id("tareas"),
             evento_id=evento["id"],
@@ -98,5 +98,6 @@ def _crear_evento(repo: Repositorio, regla: ReglaEvento, ctx: Contexto, clave: s
             sla_horas=sla_horas,
             fecha_creacion=a_iso(ctx.ahora),
             fecha_limite=a_iso(limite),
+            plazo_detalle=detalle_plazo,
         )))
     return {**evento, "tareas": tareas}

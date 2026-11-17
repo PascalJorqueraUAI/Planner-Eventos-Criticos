@@ -12,14 +12,27 @@ export const DesgloseRiesgo: React.FC<{ partidas?: PartidaRiesgo[] }> = ({ parti
     </p>
   ) : null;
 
+/**
+ * El motor entrega las fechas en hora de Chile, sin zona ("2026-11-16T12:00:00"). Se leen como UTC y se
+ * muestran en UTC para conservar esa hora tal cual, aunque el navegador esté en otra zona horaria.
+ */
+const instante = (iso: string) => new Date(`${iso.slice(0, 19)}Z`);
+
 export const fecha = (iso: string | null | undefined) =>
   iso
-    ? new Date(iso).toLocaleString('es-CL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+    ? instante(iso).toLocaleString('es-CL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })
     : '—';
+
+export const hora = (iso: string | null | undefined) =>
+  iso ? instante(iso).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) : '—';
+
+/** `iso` + `horas`, redondeado a la hora, en el formato de un campo datetime-local. */
+export const sumarHoras = (iso: string, horas: number) =>
+  new Date(instante(iso).getTime() + horas * 3_600_000).toISOString().slice(0, 13) + ':00';
 
 /** "en 3 h" / "hace 2 h" respecto de `ahora` (la hora del motor, no la del navegador). */
 export function relativo(iso: string, ahora: string) {
-  const min = Math.round((new Date(iso).getTime() - new Date(ahora).getTime()) / 60000);
+  const min = Math.round((instante(iso).getTime() - instante(ahora).getTime()) / 60000);
   const abs = Math.abs(min);
   if (abs < 1) return 'recién';
   const texto = abs < 60 ? `${abs} min` : abs < 48 * 60 ? `${Math.round(abs / 60)} h` : `${Math.round(abs / 1440)} d`;

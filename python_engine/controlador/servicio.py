@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from controlador import conciliador, detector, extraccion, importador, notificaciones, seguimiento
+from controlador.calendario import ahora_chile, calendario
 from controlador.asignador import MATRIZ_RACI, PESOS, asignar_lote, carga_actual, perfil_historico
 from controlador.catalogo_eventos import catalogo_serializado
 from controlador.conciliador import normalizar_rut
@@ -32,7 +33,7 @@ CAMPOS_CASO_EDITABLES = ("estado_comercial", "estado_judicial", "fecha_diligenci
 
 
 class Servicio:
-    def __init__(self, repo: Repositorio, reloj=datetime.now, config_extraccion: Optional[ConfigExtraccion] = None,
+    def __init__(self, repo: Repositorio, reloj=ahora_chile, config_extraccion: Optional[ConfigExtraccion] = None,
                  inicializar: bool = True, escenario: Optional[str] = None):
         self.repo = repo
         self.reloj = reloj
@@ -116,6 +117,7 @@ class Servicio:
             "extraccion": self.config_extraccion.publica(),
             "tratamientos": list(reversed(self.repo.listar("tratamientos")))[:100],
             "sandbox": self.info_sandbox(),
+            "calendario": calendario().publico(ahora.date()),
         }
 
     def info_sandbox(self) -> Dict[str, Any]:
@@ -202,6 +204,8 @@ class Servicio:
                     "area": t["area"],
                     "titulo": t["titulo"],
                     "sla_horas": t["sla_horas"],
+                    "plazo_detalle": t.get("plazo_detalle") or f"{t['sla_horas']} h",
+                    "fecha_limite": t["fecha_limite"],
                     "responsable": nombres.get(t["responsable_id"], t["responsable_id"]),
                     "puntaje": asignacion.get("puntaje"),
                     "escalada": asignacion.get("escalada", False),
