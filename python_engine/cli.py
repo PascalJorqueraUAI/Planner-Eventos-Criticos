@@ -29,10 +29,6 @@ from modelo.repositorio import Repositorio  # noqa: E402
 DIRECTORIO_EXPORTACION = os.path.join(os.getcwd(), "exports")
 
 
-# No requieren sesión: el servidor los usa para iniciarla.
-COMANDOS_SIN_SESION = ("login", "usuarios-demo")
-
-
 def ejecutar(servicio: Servicio, comando: str, datos: dict):
     if comando == "login":
         return servicio.iniciar_sesion(datos.get("email", ""), datos.get("clave", ""))

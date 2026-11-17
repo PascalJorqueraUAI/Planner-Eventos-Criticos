@@ -319,8 +319,3 @@ def _valor_actual(caso: Dict[str, Any], campo: str) -> Any:
     if campo.startswith("bien_"):
         return caso["bien_garantia"].get(campo[len("bien_"):])
     return caso.get(campo)
-
-
-def plantilla_csv() -> str:
-    """Encabezados de la plantilla de carga (separador ;, como usa Excel en Chile)."""
-    return ";".join(CAMPOS) + "\n"

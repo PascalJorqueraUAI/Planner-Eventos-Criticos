@@ -42,7 +42,7 @@ class TestRiesgoSegunElCaso(unittest.TestCase):
     def test_costas_crecen_con_la_deuda_hasta_un_tope(self):
         chica, _ = estimar_riesgo(caso("Mandamiento de embargo", monto_deuda=1_000_000))
         grande, _ = estimar_riesgo(caso("Mandamiento de embargo", monto_deuda=10_000_000))
-        enorme, detalle = estimar_riesgo(caso("Mandamiento de embargo", monto_deuda=500_000_000))
+        _, detalle = estimar_riesgo(caso("Mandamiento de embargo", monto_deuda=500_000_000))
         self.assertLess(chica, grande)
         self.assertEqual(detalle[-1]["monto"], COSTAS_MAXIMAS_CLP)
 

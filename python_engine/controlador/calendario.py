@@ -83,10 +83,6 @@ class Calendario:
             raise ValueError(f"HORARIO_HABIL inválido: {inicio}-{fin}")
         return calendario
 
-    @classmethod
-    def corrido(cls) -> "Calendario":
-        return cls(habil=False)
-
     def dia_habil(self, dia: date) -> bool:
         return dia.weekday() in DIAS_HABILES and dia not in self.feriados
 
@@ -115,6 +111,21 @@ class Calendario:
                 return cursor + restante
             restante -= cierre - cursor
             cursor = self._siguiente_apertura(cierre)
+
+    def horas_entre(self, desde: datetime, hasta: datetime) -> float:
+        """Horas hábiles transcurridas entre dos instantes (la operación inversa de `sumar_horas`)."""
+        if not self.habil:
+            return max(0.0, (hasta - desde).total_seconds() / 3600)
+        total = timedelta()
+        dia = desde.date()
+        while dia <= hasta.date():
+            if self.dia_habil(dia):
+                inicio = max(desde, datetime.combine(dia, self.inicio))
+                fin = min(hasta, datetime.combine(dia, self.fin))
+                if fin > inicio:
+                    total += fin - inicio
+            dia += timedelta(days=1)
+        return total.total_seconds() / 3600
 
     def publico(self, hoy: date) -> dict:
         return {

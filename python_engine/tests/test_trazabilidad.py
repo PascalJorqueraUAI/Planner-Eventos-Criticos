@@ -45,6 +45,18 @@ class TestConciliacionYMetricas(unittest.TestCase):
         self.assertEqual(m["riesgo_cubierto_clp"], evento["riesgo_clp"])
         self.assertEqual(m["cumplimiento_sla_pct"], 100)
 
+    def test_tiempo_de_atencion_en_horas_habiles_y_en_tiempo_real(self):
+        _, tareas = tareas_del_caso(self.servicio, "CASO-1052", "EC-01")
+        tarea = self.repo.obtener("tareas", tareas["Comercial"]["id"])
+        # Detectada un viernes a las 17:00 y atendida el lunes a las 10:00.
+        tarea.update({"estado": "Atendida", "fecha_creacion": "2026-11-13T17:00:00", "fecha_atencion": "2026-11-16T10:00:00"})
+        for otra in self.repo.listar("tareas"):
+            if otra["id"] != tarea["id"] and otra["estado"] == "Atendida":
+                otra["estado"] = "Pendiente"
+        m = calcular_metricas(self.repo, self.reloj())
+        self.assertEqual(m["horas_promedio_atencion"], 2)
+        self.assertEqual(m["horas_promedio_atencion_real"], 65)
+
     def test_desfase_aviso_alerta_es_cero_para_comprobantes_nuevos(self):
         self.servicio.ingresar_aviso({"caso_id": "CASO-1055", "monto": 100000}, "Ingesta")
         m = calcular_metricas(self.repo, self.reloj())

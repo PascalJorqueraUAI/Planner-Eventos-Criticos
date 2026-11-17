@@ -3,6 +3,7 @@ import unittest
 from unittest import mock
 
 import cli
+import fijar_clave
 from controlador import permisos
 from controlador.permisos import PermisoDenegado, actor_desde, autorizar, vista_para
 from modelo.usuarios import asegurar_usuarios, hash_clave
@@ -230,6 +231,27 @@ class TestNotificaciones(unittest.TestCase):
         self.assertEqual(self.servicio.leer_notificaciones(usuario["id"])["marcadas"], 1)
         vista = vista_para(self.repo, actor_desde(self.repo, usuario["id"]), self.servicio.estado())
         self.assertEqual(vista["notificaciones_sin_leer"], 0)
+
+
+class TestFijarClave(unittest.TestCase):
+    def setUp(self):
+        self.servicio = servicio_de_prueba()
+        self.usuario = usuario_de(self.servicio, cargo="Gerente General")
+
+    def fijar(self, *claves):
+        with mock.patch.object(fijar_clave, "Repositorio", return_value=self.servicio.repo),                 mock.patch.object(fijar_clave, "cargar_env"),                 mock.patch.object(fijar_clave.getpass, "getpass", side_effect=claves),                 mock.patch("sys.argv", ["fijar_clave.py", self.usuario["email"]]),                 mock.patch("builtins.print"):
+            return fijar_clave.main()
+
+    def test_la_clave_propia_reemplaza_a_la_de_demostracion(self):
+        self.assertEqual(self.fijar("Cobranza-segura-2026", "Cobranza-segura-2026"), 0)
+        self.assertEqual(self.servicio.iniciar_sesion(self.usuario["email"], "Cobranza-segura-2026")["id"], self.usuario["id"])
+        with self.assertRaises(ValueError):
+            self.servicio.iniciar_sesion(self.usuario["email"], "cobgestion")
+
+    def test_rechaza_claves_cortas_o_distintas(self):
+        self.assertEqual(self.fijar("corta"), 1)
+        self.assertEqual(self.fijar("Cobranza-segura-2026", "otra-distinta-2026"), 1)
+        self.assertIsNone(self.usuario.get("clave_hash"))
 
 
 if __name__ == "__main__":

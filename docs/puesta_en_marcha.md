@@ -44,8 +44,14 @@ cd Planner-Eventos-Criticos
 npm install
 cp .env.example .env        # PowerShell: Copy-Item .env.example .env
 npm test                    # todas las pruebas deben pasar
-npm run build
-npm start                   # http://<servidor>:3000
+npm run build               # compila la interfaz en dist/
+npm start                   # http://<servidor>:3000 (sirve lo compilado en dist/)
+```
+
+En el `.env` del servidor: `MODO_DEMO="no"` y un `SESSION_SECRET` propio. Luego, una clave para cada usuario:
+
+```bash
+npm run clave -- nombre.apellido@cobgestion.cl
 ```
 
 ## 5. Carga inicial de casos

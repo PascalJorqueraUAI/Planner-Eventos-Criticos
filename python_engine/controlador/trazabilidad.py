@@ -11,6 +11,7 @@ from statistics import mean
 from typing import Any, Dict, Optional
 
 from controlador.asignador import carga_actual, perfil_historico
+from controlador.calendario import calendario
 from controlador.seguimiento import esta_vencida
 from modelo.entidades import desde_iso
 from modelo.repositorio import Repositorio
@@ -80,7 +81,12 @@ def calcular_metricas(repo: Repositorio, ahora: datetime) -> Dict[str, Any]:
         "tareas_vencidas": len(vencidas),
         "tareas_atendidas": len(atendidas),
         "cumplimiento_sla_pct": round(100 * len(a_tiempo) / len(atendidas)) if atendidas else None,
+        # Desde la detección hasta que se atendió. En horas hábiles, como los plazos: mide al equipo.
+        # El tiempo real sirve de contexto (cuánto estuvo expuesto el caso, noches y fines de semana incluidos).
         "horas_promedio_atencion": _promedio(
+            calendario().horas_entre(desde_iso(t["fecha_creacion"]), desde_iso(t["fecha_atencion"])) for t in atendidas
+        ),
+        "horas_promedio_atencion_real": _promedio(
             (desde_iso(t["fecha_atencion"]) - desde_iso(t["fecha_creacion"])).total_seconds() / 3600 for t in atendidas
         ),
         "minutos_promedio_aviso_a_alerta": _promedio(desfases),

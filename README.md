@@ -44,6 +44,10 @@ Como resguardo, **si el caso tiene una diligencia programada, el plazo vence a m
 
 Todo se configura en el `.env`: `PLAZOS_HABILES`, `HORARIO_HABIL`, `ZONA_HORARIA` y `FERIADOS_ADICIONALES`. Los feriados legales de 2026 y 2027 están en [feriados.py](python_engine/modelo/feriados.py) y se actualizan una vez al año.
 
+> **Métricas:** horas hábiles para medir a las personas y tiempo real para medir el riesgo y el sistema.
+> - "Tiempo medio de atención" en Trazabilidad se mide en **horas hábiles**, igual que los plazos. Una tarea recibida el viernes a las 17:00 y atendida el lunes a las 10:00 cuenta 2 h, no 65. El tiempo real se muestra al lado como contexto, porque indica cuánto estuvo expuesto el caso.
+> - El "desfase aviso → alerta" se mide en **tiempo real**, porque el sistema funciona las 24 horas.
+
 **Riesgo de cada evento.** Es lo que Cobgestion asumiría si el apremio sigue sin que Judicial actúe. Se estima con el contexto del caso ([riesgo.py](python_engine/controlador/riesgo.py)) y la interfaz muestra el desglose:
 
 | Contexto | Qué suma |
@@ -129,7 +133,7 @@ Los correos no incluyen datos del deudor: solo los códigos de caso y tarea, el 
 **Cuentas del sandbox.** En modo demo (`MODO_DEMO="si"`), la pantalla de inicio muestra las 16 cuentas agrupadas por nivel para entrar con un clic. La clave de demostración es `CLAVE_DEMO` (por defecto `cobgestion`).
 
 En operación real:
-- usa `MODO_DEMO="no"` y da a cada usuario su propia clave, que se guarda como hash scrypt (`modelo/usuarios.py → hash_clave`);
+- usa `MODO_DEMO="no"` y da a cada usuario su propia clave con `npm run clave -- nombre.apellido@cobgestion.cl`. La clave se pide sin mostrarla y se guarda como hash scrypt. No hay ruta de la API para esto: solo quien administra el servidor fija claves;
 - define `SESSION_SECRET` en el `.env`.
 
 ## Extracción de comprobantes y protección de datos personales
@@ -183,6 +187,7 @@ python_engine/
 ├── tests/                     Pruebas unitarias por componente (unittest)
 ├── cli.py                     Punto de entrada: comando + JSON por stdin → JSON por stdout
 ├── evidencia.py               Paquete de evidencia: detección, recorrido, simulación y pruebas
+├── fijar_clave.py             Clave propia de un usuario (operación real, sin modo demo)
 └── importar_casos.py          Carga de casos desde un CSV por línea de comandos
 docs/                          Guía de puesta en marcha, plantilla de carga y mapeo de columnas
 server.ts                      API REST /api/v1 (Express)

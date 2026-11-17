@@ -139,7 +139,6 @@ export interface Colaborador {
   no_disponible_por_ausencia: boolean;
   carga_actual: number;
   historico: PerfilHistorico;
-  historico_por_tipo: Record<string, PerfilHistorico>;
   permisos: { gestionar: boolean; ausencia: boolean };
 }
 
@@ -186,7 +185,10 @@ export interface Metricas {
   tareas_vencidas: number;
   tareas_atendidas: number;
   cumplimiento_sla_pct: number | null;
+  /** En horas hábiles, como los plazos. */
   horas_promedio_atencion: number | null;
+  /** El mismo tiempo, transcurrido real (noches y fines de semana incluidos). */
+  horas_promedio_atencion_real: number | null;
   minutos_promedio_aviso_a_alerta: number | null;
   riesgo_expuesto_clp: number;
   riesgo_cubierto_clp: number;

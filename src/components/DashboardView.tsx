@@ -43,8 +43,12 @@ export const DashboardView: React.FC<{ estado: EstadoSistema }> = ({ estado }) =
           />
           <Indicador
             titulo="Tiempo medio de atención"
-            valor={m.horas_promedio_atencion == null ? '—' : `${m.horas_promedio_atencion} h`}
-            detalle="desde la detección"
+            valor={m.horas_promedio_atencion == null ? '—' : `${m.horas_promedio_atencion} h${estado.calendario.habiles ? ' hábiles' : ''}`}
+            detalle={
+              m.horas_promedio_atencion_real == null
+                ? 'desde la detección'
+                : `desde la detección · ${m.horas_promedio_atencion_real} h en tiempo real`
+            }
           />
           <Indicador titulo="Riesgo expuesto" valor={clp(m.riesgo_expuesto_clp)} detalle="costas en eventos abiertos" alerta={m.riesgo_expuesto_clp > 0} />
           <Indicador titulo="Riesgo cubierto" valor={clp(m.riesgo_cubierto_clp)} detalle="Judicial actuó dentro del SLA" />
