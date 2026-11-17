@@ -2,13 +2,15 @@ import React, { useState } from 'react';
 import { X, Loader2, FilePlus2, ShieldAlert, UserX, CheckCircle2, ArrowRight } from 'lucide-react';
 import { api, type Ejecutar } from '../api.js';
 import type { EstadoSistema, PartidaRiesgo, Prioridad } from '../domain/types.js';
-import { BadgePrioridad, Boton, DesgloseRiesgo, Etiqueta, campo, clp } from './ui.js';
+import { BadgePrioridad, Boton, DesgloseRiesgo, Etiqueta, campo, clp, fecha, sumarHoras } from './ui.js';
 
 interface ResumenTarea {
   id: string;
   area: string;
   titulo: string;
   sla_horas: number;
+  plazo_detalle: string;
+  fecha_limite: string;
   responsable: string;
   puntaje: number | null;
   escalada: boolean;
@@ -47,13 +49,6 @@ function rutAleatorio(): string {
   const dv = resto === 11 ? '0' : resto === 10 ? 'K' : String(resto);
   return `${numero.toLocaleString('es-CL')}-${dv}`;
 }
-
-const enHoras = (horas: number) => {
-  const d = new Date(Date.now() + horas * 3_600_000);
-  d.setMinutes(0, 0, 0);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:00`;
-};
 
 const rolAleatorio = () => `C-${1000 + Math.floor(Math.random() * 9000)}-2026`;
 
@@ -135,7 +130,7 @@ export const NuevoCasoModal: React.FC<Props> = ({ estado, abierto, onCerrar, eje
       bien_patente: ejemplo.caso.bien_tipo === 'Vehículo' ? `PR-${String.fromCharCode(65 + indice)}${String.fromCharCode(75 + indice)}-${10 + indice * 7}` : '',
       responsable_comercial: comercial,
       responsable_judicial: judicial,
-      fecha_diligencia: ejemplo.caso.estado_judicial === 'Diligencia con receptor programada' ? enHoras(48) : '',
+      fecha_diligencia: ejemplo.caso.estado_judicial === 'Diligencia con receptor programada' ? sumarHoras(estado.ahora, 48) : '',
     });
     setConComprobante(ejemplo.comprobante !== null);
     setMontoComprobante(ejemplo.comprobante ? String(ejemplo.comprobante) : '');
@@ -348,7 +343,9 @@ const ResultadoCreacion: React.FC<{
               <div key={t.id} className="rounded-lg border border-slate-800 bg-slate-900 p-2.5 space-y-1">
                 <div className="flex items-center gap-2">
                   <Etiqueta tono={t.area === 'Judicial' ? 'indigo' : 'emerald'}>{t.area}</Etiqueta>
-                  <span className="text-slate-500">SLA {t.sla_horas} h</span>
+                  <span className="text-slate-500">
+                    SLA {t.plazo_detalle} · vence {fecha(t.fecha_limite)}
+                  </span>
                   {t.escalada && <Etiqueta tono="red">Escalada a gerencia</Etiqueta>}
                 </div>
                 <p className="text-slate-200">{t.titulo}</p>

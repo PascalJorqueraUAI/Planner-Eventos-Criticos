@@ -31,6 +31,7 @@ from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from controlador.calendario import ahora_chile, calendario  # noqa: E402
 from controlador.catalogo_eventos import PLANTILLAS_POR_TIPO  # noqa: E402
 from controlador.extraccion import ConfigExtraccion  # noqa: E402
 from controlador.servicio import Servicio  # noqa: E402
@@ -297,8 +298,9 @@ SUPUESTOS_SIMULACION = (
     "Cada tarea la atiende su responsable tras un tiempo tomado al azar de su propio historial para ese tipo "
     "de tarea, contado desde que la recibe; si no tiene historial (gerencias de área), entre 50% y 120% del SLA. "
     "Ese historial es ficticio y no distingue tareas urgentes de normales.",
-    "No se modela el horario laboral: una tarea que llega a las 3 AM se atiende igual de rápido que una de las 11 AM. "
-    "En la realidad, sin un turno fuera de horario, los tiempos nocturnos y de fin de semana serían peores.",
+    "Los plazos (SLA) se cuentan en horas hábiles con feriados de Chile, como en operación. Las demoras de atención "
+    "simuladas, en cambio, corren a cualquier hora: una tarea que llega a las 3 AM se atiende igual de rápido que una "
+    "de las 11 AM, así que el cumplimiento simulado es optimista fuera del horario laboral.",
     "Se elige el primer resultado posible de cada tarea (por ejemplo «Pago confirmado»).",
     f"La simulación avanza en pasos de {PASO_SIMULACION_MIN} min (en operación el detector corre cada minuto "
     "y después de cada cambio).",
@@ -436,9 +438,8 @@ def simular_operacion(inicio: datetime, dias: int = 7, avisos_por_dia: float = 8
             criticos_cubiertos += 1
     judiciales_4h = [t for t in atendidas if t["area"] == "Judicial" and t["sla_horas"] <= 4]
 
-    fuera_horario = sum(1 for aid in avisos_sim
-                        if desde_iso(avisos[aid]["fecha_recepcion"]).weekday() >= 5
-                        or not 9 <= desde_iso(avisos[aid]["fecha_recepcion"]).hour < 18)
+    cal = calendario()
+    fuera_horario = sum(1 for aid in avisos_sim if not cal.en_horario(desde_iso(avisos[aid]["fecha_recepcion"])))
     return {
         "dias_simulados": dias,
         "avisos_registrados": len(avisos_sim),
@@ -629,7 +630,7 @@ def _md_simulacion(s: Dict[str, Any], sens: Dict[str, Any]) -> str:
         "para presentar como resultado**. Lo que sí demuestra la simulación es que el sistema alerta de inmediato, mide "
         "el cumplimiento de cada plazo y reasigna o escala lo que vence. El valor real del cumplimiento debe medirse en un "
         "piloto con datos de Cobgestion, donde además conviene validar si el SLA de 4 h es adecuado y quién responde "
-        "fuera del horario laboral (la simulación no modela turnos).",
+        "fuera del horario laboral (la simulación no modela turnos: las demoras simuladas no se detienen de noche).",
         "",
     ])
 
@@ -705,8 +706,8 @@ def _md_resumen(fecha: str, d: Dict[str, Any], r: Dict[str, Any], s: Dict[str, A
         "",
         "- No hay datos reales de Cobgestion ni conexión al CRM real: la integración está lista (API REST e importador de casos) pero falta el acceso.",
         "- El catálogo de eventos, la matriz RACI y los SLA están pendientes de validación con Cobgestion.",
-        "- Los tiempos de atención de la simulación salen del historial ficticio del sandbox, y la simulación no modela "
-        "el horario laboral: el cumplimiento de SLA simulado no es una estimación del real.",
+        "- Los tiempos de atención de la simulación salen del historial ficticio del sandbox y corren también de noche y "
+        "en fines de semana (los plazos sí son hábiles): el cumplimiento de SLA simulado no es una estimación del real.",
         "- El tiempo aviso → alerta se mide desde que el comprobante se **registra**. Los avisos automáticos del banco "
         "pueden entrar por API, pero un pantallazo de WhatsApp todavía requiere que alguien lo ingrese.",
         "",
@@ -716,7 +717,7 @@ def _md_resumen(fecha: str, d: Dict[str, Any], r: Dict[str, Any], s: Dict[str, A
 
 def generar(directorio: Optional[str] = None, incluir_pruebas: bool = True, dias_simulacion: int = 7,
             inicio: Optional[datetime] = None, semillas_sensibilidad=SEMILLAS_SENSIBILIDAD) -> Dict[str, Any]:
-    inicio = (inicio or datetime.now()).replace(microsecond=0)
+    inicio = (inicio or ahora_chile()).replace(microsecond=0)
     fecha = inicio.strftime("%Y-%m-%d_%H%M")
     directorio = directorio or os.path.join(DIRECTORIO_RAIZ, "evidencia", fecha)
     os.makedirs(directorio, exist_ok=True)

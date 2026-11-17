@@ -188,6 +188,7 @@ class Tarea:
     # 0 = con su responsable original · 1 = reasignada por vencimiento · 2 = escalada a jefatura
     nivel_escalamiento: int = 0
     plazo_escalamiento: Optional[str] = None   # plazo del responsable actual tras un escalamiento
+    plazo_detalle: str = ""                 # "4 h hábiles", o adelantado por una diligencia
 
 
 @dataclass

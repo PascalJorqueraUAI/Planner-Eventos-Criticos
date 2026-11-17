@@ -26,6 +26,7 @@ from controlador.asignador import (
     fin_ventana,
     resolver_raci,
 )
+from controlador.calendario import calendario
 from controlador.catalogo_eventos import PLANTILLAS_POR_TIPO
 from modelo.entidades import RegistroDesempeno, a_iso, desde_iso
 from modelo.repositorio import Repositorio
@@ -43,9 +44,9 @@ def plazo_vigente(tarea: Dict[str, Any]) -> datetime:
     return desde_iso(tarea.get("plazo_escalamiento") or tarea["fecha_limite"])
 
 
-def ventana_escalamiento(tarea: Dict[str, Any]) -> timedelta:
-    """Plazo que recibe quien hereda una tarea vencida: la mitad del SLA, mínimo 1 hora."""
-    return timedelta(hours=max(1, tarea["sla_horas"] // 2))
+def fin_escalamiento(tarea: Dict[str, Any], ahora: datetime) -> datetime:
+    """Plazo que recibe quien hereda una tarea vencida: la mitad del SLA (mínimo 1 h), en horas hábiles."""
+    return calendario().sumar_horas(ahora, max(1, tarea["sla_horas"] // 2))
 
 
 def _registrar_desempeno(repo: Repositorio, tarea: Dict[str, Any], ahora: datetime, cumplio: bool) -> None:
@@ -289,7 +290,7 @@ def escalar_vencidas(repo: Repositorio, ahora: datetime) -> List[Dict[str, Any]]
     primer_nivel = [t for t in pendientes if t.get("nivel_escalamiento", 0) == 0 and esta_vencida(t, ahora)]
     for t in primer_nivel:
         _registrar_desempeno(repo, t, ahora, cumplio=False)
-        t["plazo_escalamiento"] = a_iso(ahora + ventana_escalamiento(t))
+        t["plazo_escalamiento"] = a_iso(fin_escalamiento(t, ahora))
     # Una por una: cada tarea excluye a su propio responsable anterior.
     for t in primer_nivel:
         _reasignar_lote(repo, [t], t["responsable_id"], "venció el SLA sin ser atendida", USUARIO_ESCALAMIENTO, ahora)
@@ -303,7 +304,7 @@ def escalar_vencidas(repo: Repositorio, ahora: datetime) -> List[Dict[str, Any]]
             jefe = asignar_a_jefatura(repo, t, "Escalada a la gerencia del área: venció también el plazo tras la reasignación")
             t.update({
                 "nivel_escalamiento": 2,
-                "plazo_escalamiento": a_iso(ahora + ventana_escalamiento(t)),
+                "plazo_escalamiento": a_iso(fin_escalamiento(t, ahora)),
                 "fecha_asignacion": a_iso(ahora),
                 "reasignaciones": t.get("reasignaciones", 0) + 1,
             })

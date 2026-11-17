@@ -2,11 +2,16 @@
 
 from datetime import datetime, timedelta
 
+from controlador import calendario
+from controlador.calendario import Calendario
 from controlador.extraccion import ConfigExtraccion
 from controlador.servicio import Servicio
 from modelo.repositorio import Repositorio
 
-AHORA = datetime(2026, 10, 26, 9, 0, 0)
+AHORA = datetime(2026, 10, 26, 9, 0, 0)   # lunes hábil, a la hora de apertura
+
+# Plazos en horas hábiles 09:00-18:00 con feriados de Chile, sin importar el .env de quien corre las pruebas.
+calendario.usar(Calendario())
 
 
 class Reloj:

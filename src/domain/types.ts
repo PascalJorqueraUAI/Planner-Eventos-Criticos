@@ -106,6 +106,8 @@ export interface Tarea {
   /** 0 = responsable original · 1 = reasignada por vencimiento · 2 = escalada a jefatura */
   nivel_escalamiento: number;
   plazo_escalamiento: string | null;
+  /** Cómo se calculó el plazo: "4 h hábiles", o adelantado por una diligencia. */
+  plazo_detalle?: string;
   vencida: boolean;
   permisos: { atender: boolean; reasignar: boolean };
 }
@@ -221,6 +223,7 @@ export interface EstadoSistema {
   extraccion: ConfigExtraccion;
   tratamientos: RegistroTratamiento[];
   sandbox: InfoSandbox;
+  calendario: InfoCalendario;
   sesion: Sesion;
   notificaciones: Notificacion[];
   notificaciones_sin_leer: number;
@@ -284,6 +287,14 @@ export interface CuentasDemo {
   modo_demo: boolean;
   clave?: string;
   usuarios?: { nombre: string; email: string; cargo: string; nivel: Nivel; area: string }[];
+}
+
+/** Cómo se cuentan los plazos (python_engine/controlador/calendario.py). */
+export interface InfoCalendario {
+  habiles: boolean;
+  horario: string;
+  zona: string;
+  proximos_feriados: { fecha: string; nombre: string }[];
 }
 
 export interface InfoSandbox {

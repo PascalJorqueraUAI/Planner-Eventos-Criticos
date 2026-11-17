@@ -58,7 +58,8 @@ class TestEvidencia(unittest.TestCase):
         self.assertIn("Sensibilidad", texto)
         self.assertIn("no es un hallazgo", texto)
         # El tiempo de respuesta simulado no depende de la hora: el reporte no puede atribuirle el resultado.
-        self.assertIn("No se modela el horario laboral", texto)
+        self.assertIn("las demoras simuladas no se detienen de noche", texto)
+        self.assertIn("horas hábiles", texto)
         self.assertNotIn("llegan también de noche y en fin de semana. Por eso", texto)
 
 

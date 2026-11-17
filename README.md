@@ -34,7 +34,15 @@ Los cuatro módulos funcionan con **inicio de sesión, permisos por nivel de car
 | EC-04 | Diligencia inminente con negociación abierta | Apremio en curso, diligencia en ≤ 72 h y negociación vigente | Judicial confirma o reprograma con el receptor · Comercial contacta al deudor |
 | EC-05 | Convenio incumplido con causa suspendida | Convenio incumplido y causa suspendida | Judicial evalúa reactivar · Comercial intenta repactar |
 
-Si la causa tiene un **apremio en curso** (embargo, orden de incautación o receptor programado), el evento sube a **CRÍTICO** y el SLA judicial baja a **4 horas**. Desde el estado *informado* se alerta a Judicial: no se espera la conciliación.
+Si la causa tiene un **apremio en curso** (embargo, orden de incautación o receptor programado), el evento sube a **CRÍTICO** y el SLA judicial baja a **4 horas hábiles**. Desde el estado *informado* se alerta a Judicial: no se espera la conciliación.
+
+**Hora y plazos.** El sistema usa la hora oficial de Chile (`America/Santiago`) aunque el servidor esté en otra zona horaria. En la nube suele ser UTC, y sin este ajuste los plazos quedarían corridos 3 o 4 horas.
+
+Los SLA cuentan **horas hábiles**: lunes a viernes de 09:00 a 18:00 y sin feriados de Chile ([calendario.py](python_engine/controlador/calendario.py)). Por ejemplo, una tarea crítica de 4 h que llega un viernes a las 17:00 vence el lunes a las 12:00, o el martes si el lunes es feriado.
+
+Como resguardo, **si el caso tiene una diligencia programada, el plazo vence a más tardar 2 h antes de ella**. Así, un comprobante del viernes no espera al martes si el receptor va el lunes a las 08:00.
+
+Todo se configura en el `.env`: `PLAZOS_HABILES`, `HORARIO_HABIL`, `ZONA_HORARIA` y `FERIADOS_ADICIONALES`. Los feriados legales de 2026 y 2027 están en [feriados.py](python_engine/modelo/feriados.py) y se actualizan una vez al año.
 
 **Riesgo de cada evento.** Es lo que Cobgestion asumiría si el apremio sigue sin que Judicial actúe. Se estima con el contexto del caso ([riesgo.py](python_engine/controlador/riesgo.py)) y la interfaz muestra el desglose:
 
@@ -156,11 +164,13 @@ python_engine/
 │   ├── entidades.py           Esquema de cada hoja (Caso, AvisoPago, EventoCritico, Tarea, Colaborador…)
 │   ├── repositorio.py         Persistencia JSON, historial de cambios, exportación CSV
 │   ├── usuarios.py            Cuentas, correos institucionales y claves (scrypt)
+│   ├── feriados.py            Feriados legales de Chile (2026 y 2027)
 │   └── datos_iniciales.py     Datos del sandbox (casos, colaboradores, usuarios e historial de desempeño)
 ├── controlador/               CONTROLADOR: reglas de negocio
 │   ├── catalogo_eventos.py    Catálogo declarativo de eventos críticos
 │   ├── detector.py            Detector de eventos (idempotente)
 │   ├── riesgo.py              Riesgo de cada evento según el apremio, el bien y la deuda
+│   ├── calendario.py          Hora de Chile y plazos en horas hábiles
 │   ├── asignador.py           Matriz RACI + método húngaro
 │   ├── seguimiento.py         Atender, cierre coordinado, calendario de ausencias, escalamiento
 │   ├── importador.py          Carga de casos desde CSV del CRM o planillas, con validación
@@ -302,7 +312,7 @@ En Windows, ejecuta los comandos desde **PowerShell** o la terminal de VS Code, 
 
 | Comando | Qué hace | Red |
 |---|---|---|
-| `npm test` | Pruebas unitarias del motor Python (detector, riesgo, asignación, seguimiento, ingreso e importación de casos, acceso por niveles, notificaciones, extracción, privacidad, evidencia) | No |
+| `npm test` | Pruebas unitarias del motor Python (detector, riesgo, plazos hábiles y hora de Chile, asignación, seguimiento, ingreso e importación de casos, acceso por niveles, notificaciones, extracción, privacidad, evidencia) | No |
 | `npm run lint` | Chequeo de tipos de la Vista y la API | No |
 | `npm run evidencia` | Genera `evidencia/<fecha>/` con el resumen para la presentación: detección caso por caso, recorrido de la demo, simulación de una semana, pruebas y exportaciones CSV (ver [Paquete de evidencia](#paquete-de-evidencia)) | No |
 | `npm run test:gemini` | Integración **real** con Gemini usando solo datos ficticios (texto y `tests/fixtures/comprobante_ficticio.png`). Se omite si no hay clave o si la cuota está agotada. | Sí, gasta 2 de las 20 solicitudes diarias |
@@ -327,6 +337,7 @@ py -3 python_engine/importar_casos.py casos.csv --validar
 | La interfaz falla tras actualizar el código | El `data_store.json` quedó con un formato anterior. Presiona **Reiniciar sandbox** o borra `python_engine/data_store.json`. |
 | La interfaz vuelve a pedir inicio de sesión | La sesión dura 8 horas. Además, sin `SESSION_SECRET` en el `.env`, reiniciar `npm run dev` cierra todas las sesiones. |
 | Un `curl` a la API responde 401 | La API ahora exige credenciales: inicia sesión desde el navegador o envía `X-API-Key` con la clave `COBGESTION_API_KEY` del `.env`. |
+| Las tareas que ya existían conservan su plazo antiguo | Los plazos se calculan al crear la tarea. Las anteriores al cambio a horas hábiles mantienen su vencimiento en horas corridas; para recalcularlas, presiona **Reiniciar sandbox** (Nivel 1). |
 | Todos los eventos críticos muestran un riesgo de $600.000 | Son eventos detectados antes de que el riesgo se calculara según cada caso, y no se recalculan solos. Reinicia `npm run dev` y presiona **Reiniciar sandbox**. |
 | La interfaz dice "falta GEMINI_TRATAMIENTO_AUTORIZADO=si" aunque ya lo pusiste | El servidor se inició antes del cambio. Reinicia `npm run dev`. |
 | `npm run test:gemini` dice "skipped" | Sin clave: no hay clave en el `.env` o no se guardó. Con el motivo "cuota … agotada": se acabaron las 20 solicitudes diarias del plan gratuito (ver el punto siguiente). |

@@ -12,6 +12,7 @@ import { DashboardView } from './components/DashboardView.js';
 import { Login } from './components/Login.js';
 import { BandejaCorreos } from './components/BandejaCorreos.js';
 import { api, SinSesion } from './api.js';
+import { hora } from './components/ui.js';
 import type { EstadoSistema } from './domain/types.js';
 
 const INTERVALO_REFRESCO_MS = 15_000;
@@ -175,7 +176,7 @@ export default function App() {
 
       <footer className="border-t border-slate-800/80 py-3 px-4 text-[11px] text-slate-500 text-center">
         Vista React · API REST /api/v1 · Motor Python (Modelo + Controlador) · Último escaneo del detector:{' '}
-        {estado.ultimo_escaneo ? new Date(estado.ultimo_escaneo).toLocaleTimeString('es-CL') : '—'}
+        {hora(estado.ultimo_escaneo)} (hora de Chile)
       </footer>
     </div>
   );
